@@ -14,6 +14,7 @@ from loguru import logger
 
 from .config import MemclawConfig
 from .index import MemoryIndex
+from .reminders import ReminderScheduler
 from .search import HybridSearch
 from .store import MemoryStore
 from .tools import TOOL_DEFINITIONS, ToolExecutor
@@ -22,6 +23,7 @@ from .tools import TOOL_DEFINITIONS, ToolExecutor
 
 _SYSTEM_PROMPT_TEMPLATE = """\
 Today's date: {today}
+Current local time: {now}
 
 {agent_instructions}
 
@@ -101,12 +103,19 @@ class MemclawAgent:
     Uses the raw Anthropic Messages API with a hand-rolled agentic loop.
     """
 
-    def __init__(self, config: MemclawConfig, platform: str | None = None):
+    def __init__(
+        self,
+        config: MemclawConfig,
+        platform: str | None = None,
+        *,
+        scheduler: ReminderScheduler | None = None,
+    ):
         self.config = config
         self.platform = platform
         self.store = MemoryStore(config)
         self.index = MemoryIndex(config)
         self.search = HybridSearch(config, self.index)
+        self.scheduler = scheduler
         self._found_images: list[dict] = []
         self._history: list[dict] = []
         self._client = anthropic.AsyncAnthropic(api_key=config.anthropic_api_key)
@@ -117,9 +126,22 @@ class MemclawAgent:
             search=self.search,
             found_images=self._found_images,
             platform=platform,
+            scheduler=scheduler,
         )
 
     # ── Startup / sync ───────────────────────────────────────────────
+
+    def record_reminder_fired(self, text: str):
+        """Append a delivered reminder to history so the agent has context
+        if the user replies to it."""
+        self._history.append({
+            "role": "assistant",
+            "content": f"[Reminder fired] {text}",
+            "timestamp": datetime.now().isoformat(),
+        })
+        max_entries = self.config.conversation_history_limit * 2
+        if len(self._history) > max_entries:
+            self._history = self._history[-max_entries:]
 
     async def start(self):
         await self.index.sync()
@@ -267,8 +289,10 @@ class MemclawAgent:
         *,
         image_b64: str | None = None,
         image_media_type: str = "image/jpeg",
+        chat_id: str | None = None,
     ) -> tuple[str, list[dict]]:
         self._found_images.clear()
+        self._tools.chat_id = chat_id
 
         try:
             await self._maybe_consolidate()
@@ -297,6 +321,7 @@ class MemclawAgent:
         agent_instructions = _load_agent_instructions(self.config)
         system_prompt = _SYSTEM_PROMPT_TEMPLATE.format(
             today=date.today().isoformat(),
+            now=datetime.now().replace(microsecond=0).isoformat(),
             agent_instructions=agent_instructions,
             context=context,
             history=history_text,

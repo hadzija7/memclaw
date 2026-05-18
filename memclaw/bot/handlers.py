@@ -17,6 +17,7 @@ from telegram.ext import ContextTypes
 
 from ..agent import MemclawAgent
 from ..config import MemclawConfig
+from ..reminders import ReminderScheduler
 from .link_processor import LinkProcessor
 
 
@@ -39,8 +40,21 @@ class MessageHandlers:
     def __init__(self, config: MemclawConfig, openai_client: AsyncOpenAI):
         self.config = config
         self.openai_client = openai_client
-        self.agent = MemclawAgent(config, platform="telegram")
+        self.scheduler = ReminderScheduler(config)
+        self.agent = MemclawAgent(config, platform="telegram", scheduler=self.scheduler)
         self.link_processor = LinkProcessor(openai_client)
+        self._bot = None
+
+    def attach_bot(self, bot):
+        """Give the handler a reference to the Telegram Bot for reminder delivery."""
+        self._bot = bot
+        self.scheduler.register_delivery("telegram", self._deliver_reminder)
+
+    async def _deliver_reminder(self, chat_id: str, text: str):
+        if self._bot is None:
+            return
+        await self._bot.send_message(chat_id=int(chat_id), text=text)
+        self.agent.record_reminder_fired(text)
 
     def _check_user(self, user_id: int) -> bool:
         return user_id in self.config.allowed_user_ids_list
@@ -86,7 +100,10 @@ class MessageHandlers:
         typing_task = asyncio.create_task(_typing_loop(context.bot, chat_id))
         try:
             response_text, found_images = await self.agent.handle(
-                prompt, image_b64=image_b64, image_media_type=image_media_type
+                prompt,
+                image_b64=image_b64,
+                image_media_type=image_media_type,
+                chat_id=str(chat_id),
             )
         finally:
             typing_task.cancel()
@@ -118,8 +135,15 @@ class MessageHandlers:
         text = update.message.text
         logger.info(f"Text from user {update.effective_user.id}: {text[:100]}")
 
-        # Pre-process links and include summaries in the prompt
-        prompt_parts = [text]
+        prompt_parts: list[str] = []
+        replied = update.message.reply_to_message
+        if replied is not None:
+            quoted = replied.text or replied.caption or ""
+            if quoted:
+                prompt_parts.append(f"[Replying to message] {quoted}")
+
+        prompt_parts.append(text)
+
         links = await self.link_processor.process_links(text)
         for link in links:
             if link.get("summary"):
@@ -205,4 +229,5 @@ class MessageHandlers:
         await self._send_with_typing(update, context, prompt)
 
     def close(self):
+        self.scheduler.close()
         self.agent.close()
