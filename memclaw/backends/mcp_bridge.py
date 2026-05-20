@@ -86,13 +86,17 @@ class EphemeralHttpMcpBridge:
         )
         self._uvicorn_server = uvicorn.Server(config)
         self._uvicorn_task = asyncio.create_task(self._uvicorn_server.serve())
-        await _wait_until_listening("127.0.0.1", self._port)
+        try:
+            await _wait_until_listening("127.0.0.1", self._port)
+        except BaseException:
+            await self._shutdown_uvicorn()
+            raise
         return HttpMcpServerConfig(
             url=f"http://127.0.0.1:{self._port}/mcp",
             type="http",
         )
 
-    async def __aexit__(self, *_exc: object) -> None:
+    async def _shutdown_uvicorn(self) -> None:
         if self._uvicorn_server is not None:
             self._uvicorn_server.should_exit = True
         if self._uvicorn_task is not None:
@@ -101,6 +105,9 @@ class EphemeralHttpMcpBridge:
         self._uvicorn_task = None
         self._uvicorn_server = None
         self._session_manager = None
+
+    async def __aexit__(self, *_exc: object) -> None:
+        await self._shutdown_uvicorn()
 
 
 def mcp_servers_for(config: HttpMcpServerConfig) -> dict[str, HttpMcpServerConfig]:

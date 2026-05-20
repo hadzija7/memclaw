@@ -100,11 +100,11 @@ def _log_tool_call(name: str, args: Any) -> None:
     tool_name = name
     prefix = f"{MCP_SERVER_NAME}_"
     if tool_name.startswith(prefix):
-        tool_name = tool_name[len(prefix):]
+        tool_name = tool_name[len(prefix) :]
     logger.info("Tool call: {name}({args})", name=tool_name, args=args_str)
 
 
-async def _collect_run_result(run: Any) -> TurnResult:
+async def _collect_run_result(run: Any, *, max_turns: int) -> TurnResult:
     """Drain the run stream for logging and return a normalized TurnResult."""
     last_text = ""
     tool_steps = 0
@@ -121,12 +121,18 @@ async def _collect_run_result(run: Any) -> TurnResult:
         elif msg_type == "tool_call" and getattr(message, "status", "") == "running":
             _log_tool_call(getattr(message, "name", ""), getattr(message, "args", None))
             tool_steps += 1
+            if max_turns > 0 and tool_steps > max_turns:
+                logger.debug("Cursor run capped at max_turns={max}", max=max_turns)
+                await run.cancel()
+                break
 
     wait_result = await run.wait()
     if not last_text:
         last_text = _extract_run_text(wait_result)
 
     num_turns = max(getattr(wait_result, "num_turns", 0) or 0, tool_steps, 1)
+    if max_turns > 0:
+        num_turns = min(num_turns, max_turns)
     return TurnResult(text=last_text, num_turns=num_turns)
 
 
@@ -267,16 +273,9 @@ class CursorBackend:
                         message,
                         SendOptions(mcp_servers=mcp_servers),
                     )
-                    result = await _collect_run_result(run)
+                    result = await _collect_run_result(run, max_turns=max_turns)
                 finally:
                     await agent.aclose()
-
-            if max_turns and result.num_turns > max_turns:
-                logger.debug(
-                    "Cursor run used {used} internal steps (Memclaw max_turns={max})",
-                    used=result.num_turns,
-                    max=max_turns,
-                )
 
             if not result.text.strip():
                 result.text = "I couldn't generate a response."
