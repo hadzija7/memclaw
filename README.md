@@ -53,6 +53,14 @@ memclaw
 
 On first run, Memclaw will prompt you for your API tokens and save them to `~/.memclaw/.env`. You can update them anytime with `memclaw configure`.
 
+To upgrade to the latest release later:
+
+```bash
+pip install --upgrade memclaw   # or `pipx upgrade memclaw`
+```
+
+Your config and memories live in `~/.memclaw/` and are preserved across upgrades.
+
 ## Messaging Platforms
 
 The main way to use Memclaw. Just talk to it naturally — no commands needed. Send text, photos, voice messages, or links, or ask to be reminded later. The agent figures out what to do: store it, search your memories, retrieve images, schedule a reminder, or just chat.
