@@ -1,4 +1,10 @@
-"""Memclaw agent — raw Anthropic API with a hand-rolled agentic loop."""
+"""Memclaw agent — backend-agnostic orchestration over a pluggable agent SDK.
+
+The agent owns memory, search, history, consolidation, and the system-prompt
+shape, but delegates every LLM call to an `AgentBackend` (see
+`memclaw.backends`). The backend is selected by `config.agent_backend`
+(env var `AGENT_BACKEND`), defaulting to `claude`.
+"""
 
 from __future__ import annotations
 
@@ -7,17 +13,16 @@ import json
 import time
 from datetime import date, datetime
 from pathlib import Path
-from typing import Any
 
-import anthropic
 from loguru import logger
 
+from .backends import AgentBackend, build_backend
 from .config import MemclawConfig
 from .index import MemoryIndex
 from .reminders import ReminderScheduler
 from .search import HybridSearch
 from .store import MemoryStore
-from .tools import TOOL_DEFINITIONS, ToolExecutor
+from .tools import ToolExecutor
 
 # ── Prompts ──────────────────────────────────────────────────────────
 
@@ -92,15 +97,13 @@ appropriate.
 explanation or preamble.
 """
 
-# Sonnet 4 pricing (per 1M tokens)
-_INPUT_COST_PER_M = 3.0
-_OUTPUT_COST_PER_M = 15.0
-
 
 class MemclawAgent:
-    """Unified agent for both interactive CLI and Telegram bot.
+    """Unified agent for both interactive CLI and messaging bots.
 
-    Uses the raw Anthropic Messages API with a hand-rolled agentic loop.
+    Memory, search, history, and consolidation orchestration live here.
+    Every LLM call is delegated to a pluggable `AgentBackend` chosen via
+    `config.agent_backend`.
     """
 
     def __init__(
@@ -109,6 +112,7 @@ class MemclawAgent:
         platform: str | None = None,
         *,
         scheduler: ReminderScheduler | None = None,
+        backend: AgentBackend | None = None,
     ):
         self.config = config
         self.platform = platform
@@ -118,7 +122,6 @@ class MemclawAgent:
         self.scheduler = scheduler
         self._found_images: list[dict] = []
         self._history: list[dict] = []
-        self._client = anthropic.AsyncAnthropic(api_key=config.anthropic_api_key)
         self._tools = ToolExecutor(
             config=config,
             store=self.store,
@@ -128,6 +131,7 @@ class MemclawAgent:
             platform=platform,
             scheduler=scheduler,
         )
+        self.backend: AgentBackend = backend or build_backend(config)
 
     # ── Startup / sync ───────────────────────────────────────────────
 
@@ -212,17 +216,10 @@ class MemclawAgent:
         if existing_memory.strip():
             user_message += "\n\n## Current MEMORY.md\n\n" + existing_memory
 
-        response = await self._client.messages.create(
-            model="claude-sonnet-4-6",
-            max_tokens=4096,
-            system=_CONSOLIDATION_PROMPT,
-            messages=[{"role": "user", "content": user_message}],
+        result_text = await self.backend.run_one_shot(
+            system_prompt=_CONSOLIDATION_PROMPT,
+            user_message=user_message,
         )
-
-        result_text = ""
-        for block in response.content:
-            if hasattr(block, "text"):
-                result_text += block.text
 
         if not result_text.strip():
             return False
@@ -281,7 +278,7 @@ class MemclawAgent:
 
         return "\n\n".join(parts) if parts else "No memories found yet."
 
-    # ── Main entry point (raw API agentic loop) ──────────────────────
+    # ── Main entry point ─────────────────────────────────────────────
 
     async def handle(
         self,
@@ -327,99 +324,36 @@ class MemclawAgent:
             history=history_text,
         )
 
-        # Build initial user message
-        if image_b64:
-            user_content: Any = [
-                {
-                    "type": "image",
-                    "source": {
-                        "type": "base64",
-                        "media_type": image_media_type,
-                        "data": image_b64,
-                    },
-                },
-                {"type": "text", "text": message},
-            ]
-        else:
-            user_content = message
-
-        messages: list[dict[str, Any]] = [{"role": "user", "content": user_content}]
-
-        # ── Agentic loop ─────────────────────────────────────────────
-        max_turns = 10
-        turn = 0
-        total_input_tokens = 0
-        total_output_tokens = 0
-        total_cache_read_tokens = 0
-        total_cache_creation_tokens = 0
-        last_text = ""
         t0 = time.perf_counter()
-
-        while turn < max_turns:
-            response = await self._client.messages.create(
-                model="claude-sonnet-4-6",
-                max_tokens=4096,
-                system=system_prompt,
-                tools=TOOL_DEFINITIONS,
-                messages=messages,
-                extra_headers={"anthropic-beta": "token-efficient-tools-2025-02-19"},
-                cache_control={"type": "ephemeral"},
-            )
-
-            total_input_tokens += response.usage.input_tokens
-            total_output_tokens += response.usage.output_tokens
-            total_cache_read_tokens += getattr(response.usage, "cache_read_input_tokens", 0) or 0
-            total_cache_creation_tokens += getattr(response.usage, "cache_creation_input_tokens", 0) or 0
-
-            messages.append({"role": "assistant", "content": response.content})
-
-            if response.stop_reason != "tool_use":
-                last_text = "".join(
-                    block.text for block in response.content if block.type == "text"
-                )
-                break
-
-            tool_results: list[dict[str, Any]] = []
-            for block in response.content:
-                if block.type == "tool_use":
-                    args_str = json.dumps(block.input, ensure_ascii=False)
-                    if len(args_str) > 300:
-                        args_str = args_str[:300] + "..."
-                    logger.info("Tool call: {name}({args})", name=block.name, args=args_str)
-
-                    result_text = await self._tools.execute(block.name, block.input)
-                    tool_results.append({
-                        "type": "tool_result",
-                        "tool_use_id": block.id,
-                        "content": result_text,
-                    })
-
-            messages.append({"role": "user", "content": tool_results})
-            turn += 1
-
+        result = await self.backend.run_turn(
+            system_prompt=system_prompt,
+            user_message=message,
+            tool_executor=self._tools,
+            image_b64=image_b64,
+            image_media_type=image_media_type,
+            max_turns=10,
+        )
         elapsed_ms = int((time.perf_counter() - t0) * 1000)
 
-        # Cache reads are 90% cheaper than regular input tokens
-        cache_read_cost = total_cache_read_tokens * _INPUT_COST_PER_M * 0.1 / 1_000_000
-        cost = (
-            total_input_tokens * _INPUT_COST_PER_M / 1_000_000
-            + total_output_tokens * _OUTPUT_COST_PER_M / 1_000_000
-            + cache_read_cost
+        token_summary = (
+            f"in={result.input_tokens}, out={result.output_tokens}, "
+            f"cache_read={result.cache_read_tokens}, "
+            f"cache_create={result.cache_creation_tokens}"
         )
+        if self.backend.bills_per_token and result.cost_usd is not None:
+            logger.info(
+                "Agent done: {turns} turns, {ms}ms, cost ${cost:.4f} ({tokens})",
+                turns=result.num_turns or 1, ms=elapsed_ms,
+                cost=result.cost_usd, tokens=token_summary,
+            )
+        else:
+            # Subscription-billed backends, or backends that don't report cost.
+            logger.info(
+                "Agent done: {turns} turns, {ms}ms ({tokens})",
+                turns=result.num_turns or 1, ms=elapsed_ms, tokens=token_summary,
+            )
 
-        logger.info(
-            "Agent done: {turns} turns, {ms}ms, cost ${cost:.4f} "
-            "(in={input_t}, out={output_t}, cache_read={cache_r}, cache_create={cache_c})",
-            turns=turn + 1,
-            ms=elapsed_ms,
-            cost=cost,
-            input_t=total_input_tokens,
-            output_t=total_output_tokens,
-            cache_r=total_cache_read_tokens,
-            cache_c=total_cache_creation_tokens,
-        )
-
-        response_text = last_text or "I couldn't generate a response."
+        response_text = result.text or "I couldn't generate a response."
         self._history.append({
             "role": "assistant",
             "content": response_text,

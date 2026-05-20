@@ -17,6 +17,30 @@ from .store import MemoryStore
 console = Console()
 
 
+def _require_backend_auth(config: MemclawConfig) -> None:
+    """Exit with a helpful message unless the chosen backend is configured."""
+    from .backends import REGISTRY, get_backend_class, resolve_backend_name
+
+    name = resolve_backend_name(config)
+    try:
+        backend_cls = get_backend_class(name)
+    except ValueError:
+        known = ", ".join(REGISTRY) or "(none)"
+        console.print(
+            f"[red]Error:[/red] unknown agent backend [bold]{name}[/bold] "
+            f"(set via AGENT_BACKEND). Available: {known}.\n"
+            "Run [bold]memclaw configure[/bold] to pick a valid backend."
+        )
+        raise SystemExit(1)
+    if backend_cls.is_configured(config):
+        return
+    console.print(
+        f"[red]Error:[/red] {backend_cls.configuration_help()}\n"
+        "Run [bold]memclaw configure[/bold] to set it."
+    )
+    raise SystemExit(1)
+
+
 def _ensure_setup(ctx, channel: str | None = None):
     """Run first-time setup if ~/.memclaw/.env doesn't exist, then reload config.
 
@@ -50,10 +74,7 @@ def cli(ctx, memory_dir):
     if ctx.invoked_subcommand is None:
         _ensure_setup(ctx)
         config = ctx.obj["config"]
-        if not config.anthropic_api_key:
-            console.print("[red]Error:[/red] ANTHROPIC_API_KEY is not set.")
-            console.print("Run [bold]memclaw configure[/bold] to set it.")
-            raise SystemExit(1)
+        _require_backend_auth(config)
         if not config.openai_api_key:
             console.print("[red]Error:[/red] OPENAI_API_KEY is not set.")
             console.print("Run [bold]memclaw configure[/bold] to set it.")
@@ -184,9 +205,7 @@ def consolidate(ctx, since_date):
 
     config: MemclawConfig = ctx.obj["config"]
 
-    if not config.anthropic_api_key:
-        console.print("[red]Error:[/red] ANTHROPIC_API_KEY is not set.")
-        raise SystemExit(1)
+    _require_backend_auth(config)
     if not config.openai_api_key:
         console.print("[red]Error:[/red] OPENAI_API_KEY is not set.")
         raise SystemExit(1)
@@ -276,6 +295,7 @@ def telegram(ctx):
 
     from loguru import logger
     from openai import AsyncOpenAI
+    from telegram.error import NetworkError, TimedOut
     from telegram.ext import Application, CommandHandler, MessageHandler, filters
 
     from .bot.handlers import MessageHandlers
@@ -345,6 +365,15 @@ def telegram(ctx):
     async def _voice(update, context):
         await context.bot_data["handlers"].handle_voice(update, context)
 
+    async def _on_error(update, context):
+        err = context.error
+        if isinstance(err, (NetworkError, TimedOut)):
+            logger.warning(f"Network blip ({type(err).__name__}): {err} — polling will retry")
+            return
+        logger.exception("Unhandled error in Telegram handler", exc_info=err)
+
+    app.add_error_handler(_on_error)
+
     app.add_handler(CommandHandler("start", _start))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, _text))
     app.add_handler(MessageHandler(filters.PHOTO, _photo))
@@ -385,10 +414,7 @@ def whatsapp(ctx):
         console.print("Run [bold]memclaw configure[/bold] to set it.")
         raise SystemExit(1)
 
-    if not config.anthropic_api_key:
-        console.print("[red]Error:[/red] ANTHROPIC_API_KEY is not set.")
-        console.print("Run [bold]memclaw configure[/bold] to set it.")
-        raise SystemExit(1)
+    _require_backend_auth(config)
 
     # Logging
     logger.remove()
@@ -454,10 +480,7 @@ def slack(ctx):
         console.print("Run [bold]memclaw configure[/bold] to set it.")
         raise SystemExit(1)
 
-    if not config.anthropic_api_key:
-        console.print("[red]Error:[/red] ANTHROPIC_API_KEY is not set.")
-        console.print("Run [bold]memclaw configure[/bold] to set it.")
-        raise SystemExit(1)
+    _require_backend_auth(config)
 
     # Logging
     logger.remove()
