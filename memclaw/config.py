@@ -35,6 +35,10 @@ class MemclawConfig:
     # value resolves to the default backend at runtime.
     agent_backend: str = ""
 
+    # Cursor SDK backend settings
+    cursor_api_key: str = ""
+    cursor_model: str = ""
+
     # Conversation continuity
     conversation_history_limit: int = 10
 
@@ -60,6 +64,10 @@ class MemclawConfig:
             self.claude_code_oauth_token = os.environ.get("CLAUDE_CODE_OAUTH_TOKEN", "")
         if not self.agent_backend:
             self.agent_backend = os.environ.get("AGENT_BACKEND", "")
+        if not self.cursor_api_key:
+            self.cursor_api_key = os.environ.get("CURSOR_API_KEY", "")
+        if not self.cursor_model:
+            self.cursor_model = os.environ.get("CURSOR_MODEL", "")
         if not self.telegram_bot_token:
             self.telegram_bot_token = os.environ.get("TELEGRAM_BOT_TOKEN", "")
         if not self.allowed_user_ids:

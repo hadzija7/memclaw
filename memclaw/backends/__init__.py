@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING
 
 from .base import AgentBackend, TurnResult
 from .claude import ClaudeAgentBackend
+from .cursor import CursorBackend
 
 if TYPE_CHECKING:
     from ..config import MemclawConfig
@@ -22,6 +23,7 @@ DEFAULT_BACKEND = "claude"
 
 REGISTRY: dict[str, type] = {
     ClaudeAgentBackend.name: ClaudeAgentBackend,
+    CursorBackend.name: CursorBackend,
 }
 
 
@@ -51,6 +53,7 @@ def build_backend(config: "MemclawConfig") -> AgentBackend:
 __all__ = [
     "AgentBackend",
     "ClaudeAgentBackend",
+    "CursorBackend",
     "DEFAULT_BACKEND",
     "REGISTRY",
     "TurnResult",

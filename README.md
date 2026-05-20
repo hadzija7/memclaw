@@ -301,6 +301,15 @@ You authenticate Claude in one of two ways. The setup wizard asks you to pick:
 
 Only one of the two is set at a time — switching modes via `memclaw configure` scrubs the other.
 
+### Cursor backend
+
+Set `AGENT_BACKEND=cursor` to use the [Cursor Python SDK](https://pypi.org/project/cursor-sdk/) instead of Claude. The setup wizard shows a backend selector when both are available.
+
+- **`CURSOR_API_KEY`** (required) — from Cursor Dashboard → Integrations, or a team service account key.
+- **`CURSOR_MODEL`** (optional) — defaults to `composer-2.5`.
+
+Memclaw tools (`memory_save`, reminders, etc.) are **not** wired through the Cursor SDK yet; the Cursor agent uses its own tool surface unless you add an MCP bridge.
+
 ### Environment variables
 
 | Variable | Required | Description |
@@ -308,7 +317,9 @@ Only one of the two is set at a time — switching modes via `memclaw configure`
 | `OPENAI_API_KEY` | Yes | Embeddings + image descriptions + voice transcription |
 | `CLAUDE_CODE_OAUTH_TOKEN` | One of these two | Claude subscription token from `claude setup-token` |
 | `ANTHROPIC_API_KEY` | One of these two | Anthropic API key (`sk-ant-…`), pay-as-you-go |
-| `AGENT_BACKEND` | Optional | Agent SDK to use (defaults to `claude`) |
+| `AGENT_BACKEND` | Optional | Agent SDK to use (defaults to `claude`; set to `cursor` for Cursor SDK) |
+| `CURSOR_API_KEY` | For Cursor backend | Cursor API key from Dashboard → Integrations |
+| `CURSOR_MODEL` | For Cursor backend | Cursor model name (defaults to `composer-2.5`) |
 | `TELEGRAM_BOT_TOKEN` | For Telegram bot | Your Telegram bot token |
 | `ALLOWED_USER_IDS` | For Telegram bot | Comma-separated Telegram user IDs |
 | `SLACK_BOT_TOKEN` | For Slack bot | Slack bot token (`xoxb-...`) |
