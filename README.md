@@ -308,7 +308,7 @@ Set `AGENT_BACKEND=cursor` to use the [Cursor Python SDK](https://pypi.org/proje
 - **`CURSOR_API_KEY`** (required) — from Cursor Dashboard → Integrations, or a team service account key.
 - **`CURSOR_MODEL`** (optional) — defaults to `composer-2.5`.
 
-Memclaw tools (`memory_save`, reminders, etc.) are **not** wired through the Cursor SDK yet; the Cursor agent uses its own tool surface unless you add an MCP bridge.
+Memclaw tools (`memory_save`, reminders, etc.) are exposed to the Cursor agent via an in-process HTTP MCP server, matching the Claude backend's tool surface.
 
 ### Environment variables
 

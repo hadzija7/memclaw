@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import json
 import os
 from typing import TYPE_CHECKING, Any
 
 from loguru import logger
 
 from .base import TurnResult
+from .mcp_bridge import EphemeralHttpMcpBridge, mcp_servers_for
+from .mcp_tools import MCP_SERVER_NAME
 
 if TYPE_CHECKING:
     from rich.console import Console
@@ -30,32 +33,37 @@ def _cursor_model(config: "MemclawConfig") -> str:
     return model or _DEFAULT_MODEL
 
 
-def _build_combined_prompt(
+def _build_combined_prompt(*, system_prompt: str, user_message: str) -> str:
+    return "\n".join(
+        [
+            system_prompt.strip(),
+            "",
+            "---",
+            "",
+            user_message.strip(),
+        ]
+    )
+
+
+def _build_user_message(
     *,
     system_prompt: str,
     user_message: str,
     image_b64: str | None = None,
     image_media_type: str = "image/jpeg",
-) -> str:
-    sections = [
-        system_prompt.strip(),
-        "",
-        "---",
-        "",
-        user_message.strip(),
-    ]
-    if image_b64:
-        sections.extend(
-            [
-                "",
-                (
-                    f"[User attached an image ({image_media_type}). "
-                    "The Cursor SDK backend does not pass raw image bytes; "
-                    "use any description in the message above.]"
-                ),
-            ]
-        )
-    return "\n".join(sections)
+) -> str | Any:
+    from cursor_sdk import SDKImage, UserMessage
+
+    prompt = _build_combined_prompt(
+        system_prompt=system_prompt,
+        user_message=user_message,
+    )
+    if not image_b64:
+        return prompt
+    return UserMessage(
+        text=prompt,
+        images=[SDKImage.from_data(image_b64, image_media_type)],
+    )
 
 
 def _extract_run_text(result: Any) -> str:
@@ -68,14 +76,58 @@ def _extract_run_text(result: Any) -> str:
     return str(result) if result else ""
 
 
-def _agent_options(*, api_key: str, cwd: str, model: str) -> Any:
+def _agent_options(
+    *,
+    api_key: str,
+    cwd: str,
+    model: str,
+    mcp_servers: dict[str, Any] | None = None,
+) -> Any:
     from cursor_sdk import AgentOptions, LocalAgentOptions
 
     return AgentOptions(
         api_key=api_key,
         model=model,
         local=LocalAgentOptions(cwd=cwd),
+        mcp_servers=mcp_servers,
     )
+
+
+def _log_tool_call(name: str, args: Any) -> None:
+    args_str = json.dumps(args, ensure_ascii=False) if args is not None else "{}"
+    if len(args_str) > 300:
+        args_str = args_str[:300] + "..."
+    tool_name = name
+    prefix = f"{MCP_SERVER_NAME}_"
+    if tool_name.startswith(prefix):
+        tool_name = tool_name[len(prefix):]
+    logger.info("Tool call: {name}({args})", name=tool_name, args=args_str)
+
+
+async def _collect_run_result(run: Any) -> TurnResult:
+    """Drain the run stream for logging and return a normalized TurnResult."""
+    last_text = ""
+    tool_steps = 0
+
+    async for message in run.messages():
+        msg_type = getattr(message, "type", None)
+        if msg_type == "assistant":
+            content = getattr(getattr(message, "message", None), "content", ())
+            for block in content:
+                if getattr(block, "type", None) == "text":
+                    text = getattr(block, "text", "")
+                    if text:
+                        last_text = text
+        elif msg_type == "tool_call" and getattr(message, "status", "") == "running":
+            _log_tool_call(getattr(message, "name", ""), getattr(message, "args", None))
+            tool_steps += 1
+
+    wait_result = await run.wait()
+    if not last_text:
+        last_text = _extract_run_text(wait_result)
+
+    num_turns = max(getattr(wait_result, "num_turns", 0) or 0, tool_steps, 1)
+    return TurnResult(text=last_text, num_turns=num_turns)
 
 
 class CursorBackend:
@@ -102,9 +154,7 @@ class CursorBackend:
             "Cursor SDK backend requires CURSOR_API_KEY "
             "(Cursor Dashboard → Integrations, or a team service account key).\n"
             "Optional: CURSOR_MODEL (default: composer-2.5).\n"
-            "Set AGENT_BACKEND=cursor in ~/.memclaw/.env to use this backend.\n"
-            "Memclaw tools (memory_save, reminders, etc.) are not executed in-process; "
-            "the Cursor agent uses its own tool surface unless you add an MCP bridge."
+            "Set AGENT_BACKEND=cursor in ~/.memclaw/.env to use this backend."
         )
 
     @classmethod
@@ -188,19 +238,12 @@ class CursorBackend:
         image_media_type: str = "image/jpeg",
         max_turns: int = 10,
     ) -> TurnResult:
-        from cursor_sdk import CursorAgentError, LocalAgentOptions
-
-        if tool_executor is not None:
-            logger.debug(
-                "Cursor backend received tool_executor; Memclaw tools are not "
-                "wired through the SDK (max_turns={n} applies to SDK-internal tools only)",
-                n=max_turns,
-            )
+        from cursor_sdk import CursorAgentError, SendOptions
 
         if not self._api_key:
             raise RuntimeError("CURSOR_API_KEY is not configured")
 
-        prompt = _build_combined_prompt(
+        message = _build_user_message(
             system_prompt=system_prompt,
             user_message=user_message,
             image_b64=image_b64,
@@ -209,23 +252,35 @@ class CursorBackend:
 
         try:
             client = await self._ensure_client()
-            agent = await client.agents.create(
-                api_key=self._api_key,
-                model=self._model,
-                local=LocalAgentOptions(cwd=self._cwd),
-            )
-            try:
-                run = await agent.send(prompt)
-                text = await run.text()
-                if not text or not text.strip():
-                    text = _extract_run_text(await run.wait())
-            finally:
-                await agent.aclose()
+            async with EphemeralHttpMcpBridge(tool_executor) as mcp_config:
+                mcp_servers = mcp_servers_for(mcp_config)
+                agent = await client.agents.create(
+                    _agent_options(
+                        api_key=self._api_key,
+                        cwd=self._cwd,
+                        model=self._model,
+                        mcp_servers=mcp_servers,
+                    )
+                )
+                try:
+                    run = await agent.send(
+                        message,
+                        SendOptions(mcp_servers=mcp_servers),
+                    )
+                    result = await _collect_run_result(run)
+                finally:
+                    await agent.aclose()
 
-            if not text.strip():
-                text = "I couldn't generate a response."
+            if max_turns and result.num_turns > max_turns:
+                logger.debug(
+                    "Cursor run used {used} internal steps (Memclaw max_turns={max})",
+                    used=result.num_turns,
+                    max=max_turns,
+                )
 
-            return TurnResult(text=text, num_turns=1)
+            if not result.text.strip():
+                result.text = "I couldn't generate a response."
+            return result
         except CursorAgentError as exc:
             logger.error("Cursor SDK turn failed: {msg}", msg=exc.message)
             raise RuntimeError(f"Cursor SDK error: {exc.message}") from exc

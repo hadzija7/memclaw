@@ -7,9 +7,10 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from cursor_sdk import HttpMcpServerConfig
 
 from memclaw.backends import REGISTRY, get_backend_class
-from memclaw.backends.cursor import CursorBackend, _build_combined_prompt
+from memclaw.backends.cursor import CursorBackend, _build_combined_prompt, _build_user_message
 from memclaw.config import MemclawConfig
 
 
@@ -86,15 +87,19 @@ class TestPromptBuilding:
         assert "Hello" in prompt
         assert "---" in prompt
 
-    def test_image_note_when_image_present(self):
-        prompt = _build_combined_prompt(
+    def test_image_uses_sdk_image(self):
+        message = _build_user_message(
             system_prompt="Sys",
             user_message="Look at this",
             image_b64="abc123",
             image_media_type="image/png",
         )
-        assert "image/png" in prompt
-        assert "does not pass raw image bytes" in prompt
+        assert message.text == _build_combined_prompt(
+            system_prompt="Sys",
+            user_message="Look at this",
+        )
+        assert len(message.images) == 1
+        assert message.images[0].mime_type == "image/png"
 
 
 class TestCursorBackendRuns:
@@ -137,15 +142,23 @@ class TestCursorBackendRuns:
         backend = CursorBackend(cfg)
 
         mock_run = AsyncMock()
-        mock_run.text = AsyncMock(return_value="Turn response")
+        mock_run.messages = MagicMock(return_value=_empty_messages())
+        mock_run.wait = AsyncMock(return_value=SimpleNamespace(result="Turn response", num_turns=2))
         mock_agent = AsyncMock()
         mock_agent.send = AsyncMock(return_value=mock_run)
         mock_agent.aclose = AsyncMock()
         mock_client = AsyncMock()
         mock_client.agents.create = AsyncMock(return_value=mock_agent)
+        mock_mcp = HttpMcpServerConfig(url="http://127.0.0.1:8765/mcp", type="http")
 
-        with patch("cursor_sdk.AsyncClient") as mock_client_cls:
+        with patch("cursor_sdk.AsyncClient") as mock_client_cls, patch(
+            "memclaw.backends.cursor.EphemeralHttpMcpBridge"
+        ) as mock_bridge_cls:
             mock_client_cls.launch_bridge = AsyncMock(return_value=mock_client)
+            bridge = AsyncMock()
+            bridge.__aenter__ = AsyncMock(return_value=mock_mcp)
+            bridge.__aexit__ = AsyncMock(return_value=None)
+            mock_bridge_cls.return_value = bridge
 
             result = await backend.run_turn(
                 system_prompt="System",
@@ -155,6 +168,16 @@ class TestCursorBackendRuns:
             )
 
         assert result.text == "Turn response"
-        assert result.num_turns == 1
+        assert result.num_turns == 2
+        mock_client.agents.create.assert_awaited_once()
+        create_options = mock_client.agents.create.await_args.args[0]
+        assert create_options.mcp_servers == {"memclaw": mock_mcp}
+        send_options = mock_agent.send.await_args.args[1]
+        assert send_options.mcp_servers == {"memclaw": mock_mcp}
         mock_agent.send.assert_awaited_once()
         mock_agent.aclose.assert_awaited_once()
+
+
+async def _empty_messages():
+    if False:  # pragma: no cover - async generator helper
+        yield
