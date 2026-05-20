@@ -10,7 +10,13 @@ import pytest
 from cursor_sdk import HttpMcpServerConfig
 
 from memclaw.backends import REGISTRY, get_backend_class
-from memclaw.backends.cursor import CursorBackend, _build_combined_prompt, _build_user_message
+from memclaw.backends.cursor import (
+    CursorBackend,
+    _assistant_message_text,
+    _build_combined_prompt,
+    _build_user_message,
+    _collect_run_result,
+)
 from memclaw.config import MemclawConfig
 
 
@@ -102,6 +108,42 @@ class TestPromptBuilding:
         assert message.images[0].mime_type == "image/png"
 
 
+class TestCollectRunResult:
+    def test_assistant_message_text_concatenates_blocks(self):
+        message = SimpleNamespace(
+            message=SimpleNamespace(
+                content=[
+                    SimpleNamespace(type="text", text="Here's a motivational video for "),
+                    SimpleNamespace(type="text", text="you."),
+                ],
+            ),
+        )
+        assert _assistant_message_text(message) == "Here's a motivational video for you."
+
+    @pytest.mark.asyncio
+    async def test_collect_run_result_prefers_longer_wait_text(self):
+        async def _messages():
+            yield SimpleNamespace(
+                type="assistant",
+                message=SimpleNamespace(
+                    content=[SimpleNamespace(type="text", text="you.")],
+                ),
+            )
+
+        mock_run = AsyncMock()
+        mock_run.messages = MagicMock(return_value=_messages())
+        mock_run.wait = AsyncMock(
+            return_value=SimpleNamespace(
+                result="Here's your motivational video: youtube.com/watch?v=abc",
+                num_turns=1,
+            ),
+        )
+
+        result = await _collect_run_result(mock_run, max_turns=10)
+        assert "motivational video" in result.text
+        assert result.text != "you."
+
+
 class TestCursorBackendRuns:
     @pytest.mark.asyncio
     async def test_run_one_shot(self, tmp_path):
@@ -146,7 +188,7 @@ class TestCursorBackendRuns:
         mock_run.wait = AsyncMock(return_value=SimpleNamespace(result="Turn response", num_turns=2))
         mock_agent = AsyncMock()
         mock_agent.send = AsyncMock(return_value=mock_run)
-        mock_agent.aclose = AsyncMock()
+        mock_agent.close = AsyncMock()
         mock_client = AsyncMock()
         mock_client.agents.create = AsyncMock(return_value=mock_agent)
         mock_mcp = HttpMcpServerConfig(url="http://127.0.0.1:8765/mcp", type="http")
@@ -175,7 +217,7 @@ class TestCursorBackendRuns:
         send_options = mock_agent.send.await_args.args[1]
         assert send_options.mcp_servers == {"memclaw": mock_mcp}
         mock_agent.send.assert_awaited_once()
-        mock_agent.aclose.assert_awaited_once()
+        mock_agent.close.assert_awaited_once()
 
 
 async def _empty_messages():

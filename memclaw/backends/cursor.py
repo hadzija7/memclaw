@@ -104,6 +104,18 @@ def _log_tool_call(name: str, args: Any) -> None:
     logger.info("Tool call: {name}({args})", name=tool_name, args=args_str)
 
 
+def _assistant_message_text(message: Any) -> str:
+    """Concatenate all text blocks from a Cursor SDK assistant stream message."""
+    content = getattr(getattr(message, "message", None), "content", ())
+    parts: list[str] = []
+    for block in content:
+        if getattr(block, "type", None) == "text":
+            text = getattr(block, "text", "")
+            if text:
+                parts.append(text)
+    return "".join(parts)
+
+
 async def _collect_run_result(run: Any, *, max_turns: int) -> TurnResult:
     """Drain the run stream for logging and return a normalized TurnResult."""
     last_text = ""
@@ -112,12 +124,9 @@ async def _collect_run_result(run: Any, *, max_turns: int) -> TurnResult:
     async for message in run.messages():
         msg_type = getattr(message, "type", None)
         if msg_type == "assistant":
-            content = getattr(getattr(message, "message", None), "content", ())
-            for block in content:
-                if getattr(block, "type", None) == "text":
-                    text = getattr(block, "text", "")
-                    if text:
-                        last_text = text
+            turn_text = _assistant_message_text(message)
+            if turn_text:
+                last_text = turn_text
         elif msg_type == "tool_call" and getattr(message, "status", "") == "running":
             _log_tool_call(getattr(message, "name", ""), getattr(message, "args", None))
             tool_steps += 1
@@ -127,8 +136,11 @@ async def _collect_run_result(run: Any, *, max_turns: int) -> TurnResult:
                 break
 
     wait_result = await run.wait()
-    if not last_text:
-        last_text = _extract_run_text(wait_result)
+    wait_text = _extract_run_text(wait_result)
+    if len(wait_text) > len(last_text):
+        last_text = wait_text
+    elif not last_text:
+        last_text = wait_text
 
     num_turns = max(getattr(wait_result, "num_turns", 0) or 0, tool_steps, 1)
     if max_turns > 0:
@@ -275,7 +287,7 @@ class CursorBackend:
                     )
                     result = await _collect_run_result(run, max_turns=max_turns)
                 finally:
-                    await agent.aclose()
+                    await agent.close()
 
             if not result.text.strip():
                 result.text = "I couldn't generate a response."
