@@ -211,7 +211,7 @@ class SlackHandlers:
             file=(f"audio{ext}", audio_bytes, mime),
         )
         text = transcription.text
-        logger.debug("Transcribed Slack audio: {t}", t=text[:100])
+        logger.info("Transcribed Slack audio: {t}", t=text)
 
         link_info = ""
         links = await self.link_processor.process_links(text)

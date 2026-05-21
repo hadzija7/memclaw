@@ -211,7 +211,7 @@ class WhatsAppBot:
             file=(f"voice{ext}", audio_bytes, mime_type),
         )
         text = transcription.text
-        logger.debug("Transcribed WhatsApp voice: {t}", t=text[:100])
+        logger.info("Transcribed WhatsApp voice: {t}", t=text)
 
         link_info = ""
         links = await self.link_processor.process_links(text)

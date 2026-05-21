@@ -208,7 +208,7 @@ class MessageHandlers:
             file=("voice.ogg", bytes(voice_bytes), "audio/ogg"),
         )
         text = transcription.text
-        logger.debug(f"Transcribed: {text[:100]}")
+        logger.info(f"Transcribed: {text}")
 
         # Process links
         link_info = ""
