@@ -131,7 +131,7 @@ async def _collect_run_result(run: Any, *, max_turns: int) -> TurnResult:
         elif msg_type == "tool_call" and getattr(message, "status", "") == "running":
             _log_tool_call(getattr(message, "name", ""), getattr(message, "args", None))
             tool_steps += 1
-            if max_turns > 0 and tool_steps > max_turns:
+            if max_turns > 0 and tool_steps >= max_turns:
                 logger.debug("Cursor run capped at max_turns={max}", max=max_turns)
                 await run.cancel()
                 cancelled_for_cap = True

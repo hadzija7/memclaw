@@ -50,6 +50,7 @@ def _ensure_setup(ctx, channel: str | None = None):
         run_setup(channel=channel)
         # Reload .env so newly saved keys are picked up
         from dotenv import load_dotenv
+
         load_dotenv(Path.home() / ".memclaw" / ".env", override=True)
         memory_dir = ctx.obj.get("memory_dir")
         config = MemclawConfig(memory_dir=memory_dir) if memory_dir else MemclawConfig()
@@ -85,6 +86,7 @@ def cli(ctx, memory_dir):
 # ------------------------------------------------------------------
 # Interactive mode
 # ------------------------------------------------------------------
+
 
 async def _interactive(config: MemclawConfig):
     import sys
@@ -141,7 +143,7 @@ async def _interactive(config: MemclawConfig):
                 console.print(Markdown(response))
             console.print()
     finally:
-        agent.close()
+        await agent.aclose()
         console.print("\nGoodbye! Your memories are safe.")
 
 
@@ -149,9 +151,12 @@ async def _interactive(config: MemclawConfig):
 # Direct commands (work without the Claude agent / Anthropic key)
 # ------------------------------------------------------------------
 
+
 @cli.command()
 @click.argument("content")
-@click.option("--permanent", is_flag=True, help="Save to MEMORY.md instead of today's daily file")
+@click.option(
+    "--permanent", is_flag=True, help="Save to MEMORY.md instead of today's daily file"
+)
 @click.pass_context
 def save(ctx, content, permanent):
     """Save a memory directly (no agent needed)."""
@@ -195,7 +200,12 @@ def search(ctx, query_text, limit):
 
 
 @cli.command()
-@click.option("--since", "since_date", default=None, help="Consolidate daily files after this date (YYYY-MM-DD)")
+@click.option(
+    "--since",
+    "since_date",
+    default=None,
+    help="Consolidate daily files after this date (YYYY-MM-DD)",
+)
 @click.pass_context
 def consolidate(ctx, since_date):
     """Consolidate daily memory files into MEMORY.md."""
@@ -215,7 +225,9 @@ def consolidate(ctx, since_date):
         try:
             override = date_type.fromisoformat(since_date)
         except ValueError:
-            console.print(f"[red]Error:[/red] Invalid date format: {since_date}. Use YYYY-MM-DD.")
+            console.print(
+                f"[red]Error:[/red] Invalid date format: {since_date}. Use YYYY-MM-DD."
+            )
             raise SystemExit(1)
 
     async def _run():
@@ -226,11 +238,13 @@ def consolidate(ctx, since_date):
                     force=True, consolidated_through_override=override
                 )
             if result:
-                console.print("[green]Consolidation complete.[/green] MEMORY.md has been updated.")
+                console.print(
+                    "[green]Consolidation complete.[/green] MEMORY.md has been updated."
+                )
             else:
                 console.print("[yellow]No daily files to consolidate.[/yellow]")
         finally:
-            agent.close()
+            await agent.aclose()
 
     asyncio.run(_run())
 
@@ -280,6 +294,7 @@ def status(ctx):
 # Telegram bot
 # ------------------------------------------------------------------
 
+
 @cli.command()
 @click.pass_context
 def configure(ctx):
@@ -315,8 +330,11 @@ def telegram(ctx):
 
     # Logging
     logger.remove()
-    logger.add(sys.stderr, level="INFO",
-               format="<green>{time:HH:mm:ss}</green> | <level>{level:<8}</level> | <level>{message}</level>")
+    logger.add(
+        sys.stderr,
+        level="INFO",
+        format="<green>{time:HH:mm:ss}</green> | <level>{level:<8}</level> | <level>{message}</level>",
+    )
     logger.add(
         str(config.memory_dir / "bot.log"),
         rotation="10 MB",
@@ -341,7 +359,7 @@ def telegram(ctx):
     async def post_shutdown(application: Application) -> None:
         handlers = application.bot_data.get("handlers")
         if handlers:
-            handlers.close()
+            await handlers.aclose()
             logger.info("Memclaw bot shut down cleanly")
 
     app = (
@@ -368,7 +386,9 @@ def telegram(ctx):
     async def _on_error(update, context):
         err = context.error
         if isinstance(err, (NetworkError, TimedOut)):
-            logger.warning(f"Network blip ({type(err).__name__}): {err} — polling will retry")
+            logger.warning(
+                f"Network blip ({type(err).__name__}): {err} — polling will retry"
+            )
             return
         logger.exception("Unhandled error in Telegram handler", exc_info=err)
 
@@ -389,6 +409,7 @@ def telegram(ctx):
 # ------------------------------------------------------------------
 # WhatsApp bot (personal account via WhatsApp Web — neonize)
 # ------------------------------------------------------------------
+
 
 @cli.command()
 @click.pass_context
@@ -418,8 +439,11 @@ def whatsapp(ctx):
 
     # Logging
     logger.remove()
-    logger.add(sys.stderr, level="INFO",
-               format="<green>{time:HH:mm:ss}</green> | <level>{level:<8}</level> | <level>{message}</level>")
+    logger.add(
+        sys.stderr,
+        level="INFO",
+        format="<green>{time:HH:mm:ss}</green> | <level>{level:<8}</level> | <level>{message}</level>",
+    )
     logger.add(
         str(config.memory_dir / "whatsapp.log"),
         rotation="10 MB",
@@ -430,9 +454,7 @@ def whatsapp(ctx):
     openai_client = AsyncOpenAI(api_key=config.openai_api_key)
     bot_ = WhatsAppBot(config, openai_client)
 
-    console.print(
-        "[green]Starting Memclaw WhatsApp bot[/green]  (self-notes only)"
-    )
+    console.print("[green]Starting Memclaw WhatsApp bot[/green]  (self-notes only)")
     if not config.whatsapp_session_db.exists():
         console.print(
             "[cyan]First run:[/cyan] a QR code will appear below. "
@@ -450,6 +472,7 @@ def whatsapp(ctx):
 # ------------------------------------------------------------------
 # Slack bot (Socket Mode via slack-bolt)
 # ------------------------------------------------------------------
+
 
 @cli.command()
 @click.pass_context
@@ -484,8 +507,11 @@ def slack(ctx):
 
     # Logging
     logger.remove()
-    logger.add(sys.stderr, level="INFO",
-               format="<green>{time:HH:mm:ss}</green> | <level>{level:<8}</level> | <level>{message}</level>")
+    logger.add(
+        sys.stderr,
+        level="INFO",
+        format="<green>{time:HH:mm:ss}</green> | <level>{level:<8}</level> | <level>{message}</level>",
+    )
     logger.add(
         str(config.memory_dir / "slack.log"),
         rotation="10 MB",
@@ -507,7 +533,7 @@ def slack(ctx):
         except KeyboardInterrupt:
             pass
         finally:
-            handlers.close()
+            await handlers.aclose()
             console.print("\nMemclaw Slack bot shut down.")
 
     asyncio.run(_run())

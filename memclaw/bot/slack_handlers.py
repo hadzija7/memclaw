@@ -101,9 +101,13 @@ class SlackHandlers:
         audio_files = [f for f in files if f.get("mimetype", "").startswith("audio/")]
 
         if image_files:
-            await self._handle_image(user, channel, thread_ts, text, image_files[0], say, client)
+            await self._handle_image(
+                user, channel, thread_ts, text, image_files[0], say, client
+            )
         elif audio_files:
-            await self._handle_audio(user, channel, thread_ts, text, audio_files[0], say, client)
+            await self._handle_audio(
+                user, channel, thread_ts, text, audio_files[0], say, client
+            )
         elif text:
             await self._handle_text(user, channel, thread_ts, text, say)
         else:
@@ -113,13 +117,16 @@ class SlackHandlers:
     def _strip_mention(text: str) -> str:
         """Remove bot mention tags like <@U123ABC> from the start of messages."""
         import re
+
         return re.sub(r"^\s*<@[A-Z0-9]+>\s*", "", text).strip()
 
     # ------------------------------------------------------------------
     # Text messages
     # ------------------------------------------------------------------
 
-    async def _handle_text(self, user: str, channel: str, thread_ts: str, text: str, say):
+    async def _handle_text(
+        self, user: str, channel: str, thread_ts: str, text: str, say
+    ):
         logger.info("Slack text from {u} in {c}: {t}", u=user, c=channel, t=text[:100])
 
         prompt_parts = [text]
@@ -140,16 +147,26 @@ class SlackHandlers:
     # ------------------------------------------------------------------
 
     async def _handle_image(
-        self, user: str, channel: str, thread_ts: str, caption: str,
-        file_info: dict, say, client,
+        self,
+        user: str,
+        channel: str,
+        thread_ts: str,
+        caption: str,
+        file_info: dict,
+        say,
+        client,
     ):
         file_name = file_info.get("name", "image")
-        logger.info("Slack image from {u}: {f}, caption={c!r}", u=user, f=file_name, c=caption)
+        logger.info(
+            "Slack image from {u}: {f}, caption={c!r}", u=user, f=file_name, c=caption
+        )
 
         # Download image via Slack file URL (requires bot token for auth)
         image_bytes = await self._download_slack_file(file_info)
         if image_bytes is None:
-            await say(text="Sorry, I couldn't download that image.", thread_ts=thread_ts)
+            await say(
+                text="Sorry, I couldn't download that image.", thread_ts=thread_ts
+            )
             return
 
         # Save locally under the slack media dir so retrievals can upload it back.
@@ -159,7 +176,9 @@ class SlackHandlers:
         local_path.write_bytes(image_bytes)
 
         base64_image = base64.b64encode(image_bytes).decode("utf-8")
-        logger.debug("Downloaded Slack image: {n} bytes -> {p}", n=len(image_bytes), p=local_path)
+        logger.debug(
+            "Downloaded Slack image: {n} bytes -> {p}", n=len(image_bytes), p=local_path
+        )
 
         # Process links in caption
         link_info = ""
@@ -192,15 +211,23 @@ class SlackHandlers:
     # ------------------------------------------------------------------
 
     async def _handle_audio(
-        self, user: str, channel: str, thread_ts: str, caption: str,
-        file_info: dict, say, client,
+        self,
+        user: str,
+        channel: str,
+        thread_ts: str,
+        caption: str,
+        file_info: dict,
+        say,
+        client,
     ):
         file_name = file_info.get("name", "audio")
         logger.info("Slack audio from {u}: {f}", u=user, f=file_name)
 
         audio_bytes = await self._download_slack_file(file_info)
         if audio_bytes is None:
-            await say(text="Sorry, I couldn't download that audio file.", thread_ts=thread_ts)
+            await say(
+                text="Sorry, I couldn't download that audio file.", thread_ts=thread_ts
+            )
             return
 
         mime = file_info.get("mimetype", "audio/mp4")
@@ -253,7 +280,9 @@ class SlackHandlers:
             logger.error("Failed to download Slack file: {exc}", exc=exc)
             return None
 
-    async def _upload_and_share_image(self, channel: str, thread_ts: str, image_path: str, caption: str | None = None):
+    async def _upload_and_share_image(
+        self, channel: str, thread_ts: str, image_path: str, caption: str | None = None
+    ):
         """Upload a local image to Slack and share it in a channel."""
         path = Path(image_path)
         if not path.exists():
@@ -287,7 +316,9 @@ class SlackHandlers:
             caption = img.get("caption") or None
 
             if platform == "slack":
-                await self._upload_and_share_image(channel, thread_ts, media_ref, caption)
+                await self._upload_and_share_image(
+                    channel, thread_ts, media_ref, caption
+                )
             else:
                 # For images from other platforms (e.g. Telegram file_ids),
                 # include a note in the text response
@@ -295,7 +326,9 @@ class SlackHandlers:
                 if response_text:
                     response_text += f"\n\n_(Found image: {desc} -- originally saved via {platform})_"
                 else:
-                    response_text = f"_(Found image: {desc} -- originally saved via {platform})_"
+                    response_text = (
+                        f"_(Found image: {desc} -- originally saved via {platform})_"
+                    )
 
         if response_text:
             await say(text=response_text[:4000], thread_ts=thread_ts)
@@ -312,7 +345,11 @@ class SlackHandlers:
         handler = AsyncSocketModeHandler(self.app, self.config.slack_app_token)
         await handler.start_async()
 
-    def close(self):
+    async def aclose(self) -> None:
+        self.scheduler.close()
+        await self.agent.aclose()
+
+    def close(self) -> None:
         self.scheduler.close()
         self.agent.close()
 
@@ -320,6 +357,7 @@ class SlackHandlers:
 # ------------------------------------------------------------------
 # Utilities
 # ------------------------------------------------------------------
+
 
 def _mime_to_ext(mime_type: str) -> str:
     mapping = {
