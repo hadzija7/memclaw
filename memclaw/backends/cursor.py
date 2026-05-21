@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import os
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, ClassVar
 
 from loguru import logger
 
@@ -148,11 +148,11 @@ async def _collect_run_result(run: Any, *, max_turns: int) -> TurnResult:
     return TurnResult(text=last_text, num_turns=num_turns)
 
 
-class CursorBackend:
-    """Memclaw backend powered by the Cursor Python SDK (local runtime)."""
+class CursorAgentBackend:
+    """Cursor Python SDK implementation of the AgentBackend protocol."""
 
-    name = "cursor"
-    display_name = "Cursor SDK"
+    name: ClassVar[str] = "cursor"
+    display_name: ClassVar[str] = "Cursor SDK"
 
     def __init__(self, config: "MemclawConfig") -> None:
         self.config = config

@@ -11,7 +11,7 @@ from cursor_sdk import HttpMcpServerConfig
 
 from memclaw.backends import REGISTRY, get_backend_class
 from memclaw.backends.cursor import (
-    CursorBackend,
+    CursorAgentBackend,
     _assistant_message_text,
     _build_combined_prompt,
     _build_user_message,
@@ -46,27 +46,27 @@ class TestRegistry:
     def test_both_backends_registered(self):
         assert "cursor" in REGISTRY
         assert "claude" in REGISTRY
-        assert REGISTRY["cursor"] is CursorBackend
+        assert REGISTRY["cursor"] is CursorAgentBackend
 
     def test_get_backend_class_by_name(self):
-        assert get_backend_class("cursor") is CursorBackend
+        assert get_backend_class("cursor") is CursorAgentBackend
 
     def test_get_backend_class_unknown_raises(self):
         with pytest.raises(ValueError, match="Unknown agent backend"):
             get_backend_class("nonexistent")
 
 
-class TestCursorBackendConfig:
+class TestCursorAgentBackendConfig:
     def test_is_configured_false_without_key(self, tmp_path):
         cfg = _make_config(tmp_path)
-        assert CursorBackend.is_configured(cfg) is False
+        assert CursorAgentBackend.is_configured(cfg) is False
 
     def test_is_configured_true_with_key(self, tmp_path):
         cfg = _make_config(tmp_path, cursor_api_key="crsr_test_key")
-        assert CursorBackend.is_configured(cfg) is True
+        assert CursorAgentBackend.is_configured(cfg) is True
 
     def test_configuration_help_mentions_env(self):
-        help_text = CursorBackend.configuration_help()
+        help_text = CursorAgentBackend.configuration_help()
         assert "CURSOR_API_KEY" in help_text
         assert "AGENT_BACKEND=cursor" in help_text
 
@@ -76,7 +76,7 @@ class TestCursorBackendConfig:
             cursor_api_key="crsr_test_key",
             cursor_model="composer-2.5",
         )
-        backend = CursorBackend(cfg)
+        backend = CursorAgentBackend(cfg)
         assert backend._api_key == "crsr_test_key"
         assert backend._model == "composer-2.5"
         assert backend._cwd == str(cfg.memory_dir)
@@ -144,11 +144,11 @@ class TestCollectRunResult:
         assert result.text != "you."
 
 
-class TestCursorBackendRuns:
+class TestCursorAgentBackendRuns:
     @pytest.mark.asyncio
     async def test_run_one_shot(self, tmp_path):
         cfg = _make_config(tmp_path, cursor_api_key="crsr_test_key")
-        backend = CursorBackend(cfg)
+        backend = CursorAgentBackend(cfg)
 
         mock_result = SimpleNamespace(result="Hello from Cursor")
 
@@ -173,7 +173,7 @@ class TestCursorBackendRuns:
     @pytest.mark.asyncio
     async def test_run_one_shot_missing_key_raises(self, tmp_path):
         cfg = _make_config(tmp_path)
-        backend = CursorBackend(cfg)
+        backend = CursorAgentBackend(cfg)
 
         with pytest.raises(RuntimeError, match="CURSOR_API_KEY"):
             await backend.run_one_shot(system_prompt="S", user_message="U")
@@ -181,7 +181,7 @@ class TestCursorBackendRuns:
     @pytest.mark.asyncio
     async def test_run_turn(self, tmp_path):
         cfg = _make_config(tmp_path, cursor_api_key="crsr_test_key")
-        backend = CursorBackend(cfg)
+        backend = CursorAgentBackend(cfg)
 
         mock_run = AsyncMock()
         mock_run.messages = MagicMock(return_value=_empty_messages())
