@@ -21,12 +21,6 @@ if TYPE_CHECKING:
     from ..tools import ToolExecutor
 
 
-def _pick_free_port() -> int:
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
-        sock.bind(("127.0.0.1", 0))
-        return int(sock.getsockname()[1])
-
-
 async def _wait_until_listening(host: str, port: int, *, timeout: float = 5.0) -> None:
     deadline = asyncio.get_running_loop().time() + timeout
     while asyncio.get_running_loop().time() < deadline:
@@ -56,6 +50,7 @@ class EphemeralHttpMcpBridge:
     def __init__(self, executor: "ToolExecutor") -> None:
         self._executor = executor
         self._port = 0
+        self._listen_sock: socket.socket | None = None
         self._session_manager: StreamableHTTPSessionManager | None = None
         self._uvicorn_server: uvicorn.Server | None = None
         self._uvicorn_task: asyncio.Task[None] | None = None
@@ -76,15 +71,27 @@ class EphemeralHttpMcpBridge:
             async with session_manager.run():
                 yield
 
-        self._port = _pick_free_port()
         starlette_app = Starlette(
             routes=[Route("/mcp", endpoint=asgi_app)],
             lifespan=lifespan,
         )
+        listen_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        try:
+            listen_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            listen_sock.bind(("127.0.0.1", 0))
+            listen_sock.listen(2048)
+            self._port = int(listen_sock.getsockname()[1])
+            self._listen_sock = listen_sock
+            listen_sock = None
+        finally:
+            if listen_sock is not None:
+                listen_sock.close()
+
         config = uvicorn.Config(
             starlette_app,
             host="127.0.0.1",
             port=self._port,
+            fd=self._listen_sock.fileno(),
             log_level="warning",
         )
         self._uvicorn_server = uvicorn.Server(config)
@@ -108,6 +115,9 @@ class EphemeralHttpMcpBridge:
         self._uvicorn_task = None
         self._uvicorn_server = None
         self._session_manager = None
+        if self._listen_sock is not None:
+            self._listen_sock.close()
+            self._listen_sock = None
 
     async def __aexit__(self, *_exc: object) -> None:
         await self._shutdown_uvicorn()

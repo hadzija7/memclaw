@@ -73,7 +73,7 @@ def _extract_run_text(result: Any) -> str:
         value = getattr(result, attr, None)
         if isinstance(value, str) and value.strip():
             return value
-    return str(result) if result else ""
+    return ""
 
 
 def _agent_options(
