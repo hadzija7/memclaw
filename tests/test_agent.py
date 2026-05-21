@@ -5,7 +5,6 @@ orchestration in `MemclawAgent` without depending on any SDK. Per-backend
 behavior (env scrubbing, MCP wrapping, …) is tested separately in
 `tests/backends/`.
 """
-
 from __future__ import annotations
 
 import json
@@ -25,7 +24,6 @@ from memclaw.search import SearchResult
 # ────────────────────────────────────────────────────────────────────
 # Helpers
 # ────────────────────────────────────────────────────────────────────
-
 
 def _make_config(tmp_path: Path) -> MemclawConfig:
     return MemclawConfig(
@@ -68,7 +66,6 @@ def fake_backend() -> FakeBackend:
 
 def _make_agent(cfg: MemclawConfig, backend: FakeBackend):
     from memclaw.agent import MemclawAgent
-
     return MemclawAgent(cfg, backend=backend)
 
 
@@ -76,19 +73,14 @@ def _make_agent(cfg: MemclawConfig, backend: FakeBackend):
 # Spec #1: Conversation History
 # ────────────────────────────────────────────────────────────────────
 
-
 class TestConversationHistory:
-    def test_history_initialized_empty(
-        self, cfg: MemclawConfig, fake_backend: FakeBackend
-    ):
+    def test_history_initialized_empty(self, cfg: MemclawConfig, fake_backend: FakeBackend):
         agent = _make_agent(cfg, fake_backend)
         assert agent._history == []
         agent.close()
 
     @pytest.mark.asyncio
-    async def test_history_appended_after_handle(
-        self, cfg: MemclawConfig, fake_backend: FakeBackend
-    ):
+    async def test_history_appended_after_handle(self, cfg: MemclawConfig, fake_backend: FakeBackend):
         """handle() should append user + assistant messages to _history."""
         fake_backend.turn_response = TurnResult(text="Hello! I'm Memclaw.")
         agent = _make_agent(cfg, fake_backend)
@@ -107,7 +99,7 @@ class TestConversationHistory:
         # Backend was called exactly once with the user message.
         assert len(fake_backend.turn_calls) == 1
         assert fake_backend.turn_calls[0]["user_message"] == "Hello"
-        await agent.aclose()
+        agent.close()
 
     def test_history_trimming(self, cfg: MemclawConfig, fake_backend: FakeBackend):
         """History should be trimmed to conversation_history_limit * 2."""
@@ -116,13 +108,11 @@ class TestConversationHistory:
 
         # Manually populate history with 10 entries
         for i in range(10):
-            agent._history.append(
-                {
-                    "role": "user" if i % 2 == 0 else "assistant",
-                    "content": f"message {i}",
-                    "timestamp": datetime.now().isoformat(),
-                }
-            )
+            agent._history.append({
+                "role": "user" if i % 2 == 0 else "assistant",
+                "content": f"message {i}",
+                "timestamp": datetime.now().isoformat(),
+            })
 
         # Simulate trimming (same logic as in handle())
         max_entries = cfg.conversation_history_limit * 2
@@ -135,22 +125,18 @@ class TestConversationHistory:
         assert agent._history[-1]["content"] == "message 9"
         agent.close()
 
-    def test_image_placeholder_in_history(
-        self, cfg: MemclawConfig, fake_backend: FakeBackend
-    ):
+    def test_image_placeholder_in_history(self, cfg: MemclawConfig, fake_backend: FakeBackend):
         """When an image is sent, history should store a placeholder, not base64."""
         agent = _make_agent(cfg, fake_backend)
 
         # Simulate what handle() does for images
         image_b64 = "base64data..."
         history_content = "[User sent a photo]" if image_b64 else "text"
-        agent._history.append(
-            {
-                "role": "user",
-                "content": history_content,
-                "timestamp": datetime.now().isoformat(),
-            }
-        )
+        agent._history.append({
+            "role": "user",
+            "content": history_content,
+            "timestamp": datetime.now().isoformat(),
+        })
 
         assert agent._history[0]["content"] == "[User sent a photo]"
         assert "base64" not in agent._history[0]["content"]
@@ -161,12 +147,9 @@ class TestConversationHistory:
 # Spec #2: Memory Consolidation
 # ────────────────────────────────────────────────────────────────────
 
-
 class TestConsolidation:
     @pytest.mark.asyncio
-    async def test_skips_when_below_threshold(
-        self, cfg: MemclawConfig, fake_backend: FakeBackend
-    ):
+    async def test_skips_when_below_threshold(self, cfg: MemclawConfig, fake_backend: FakeBackend):
         """Consolidation should not run when file count < threshold."""
         cfg.consolidation_threshold = 7
         agent = _make_agent(cfg, fake_backend)
@@ -180,12 +163,10 @@ class TestConsolidation:
         result = await agent._maybe_consolidate()
         assert result is False
         assert fake_backend.one_shot_calls == []
-        await agent.aclose()
+        agent.close()
 
     @pytest.mark.asyncio
-    async def test_runs_when_above_threshold(
-        self, cfg: MemclawConfig, fake_backend: FakeBackend
-    ):
+    async def test_runs_when_above_threshold(self, cfg: MemclawConfig, fake_backend: FakeBackend):
         """Consolidation should run when file count >= threshold."""
         cfg.consolidation_threshold = 3
         fake_backend.one_shot_response = "## Key Facts\n\n- Fact 0\n- Fact 1\n"
@@ -210,12 +191,10 @@ class TestConsolidation:
         meta = json.loads(meta_path.read_text())
         assert meta["consolidated_through"] == "2025-03-05"
 
-        await agent.aclose()
+        agent.close()
 
     @pytest.mark.asyncio
-    async def test_force_ignores_threshold(
-        self, cfg: MemclawConfig, fake_backend: FakeBackend
-    ):
+    async def test_force_ignores_threshold(self, cfg: MemclawConfig, fake_backend: FakeBackend):
         """force=True should run consolidation even with 1 file."""
         cfg.consolidation_threshold = 100
         fake_backend.one_shot_response = "## Notes\n- One note"
@@ -229,12 +208,10 @@ class TestConsolidation:
         result = await agent._maybe_consolidate(force=True)
 
         assert result is True
-        await agent.aclose()
+        agent.close()
 
     @pytest.mark.asyncio
-    async def test_consolidated_through_override(
-        self, cfg: MemclawConfig, fake_backend: FakeBackend
-    ):
+    async def test_consolidated_through_override(self, cfg: MemclawConfig, fake_backend: FakeBackend):
         """consolidated_through_override should override meta.json."""
         fake_backend.one_shot_response = "## Consolidated"
         agent = _make_agent(cfg, fake_backend)
@@ -261,23 +238,19 @@ class TestConsolidation:
         assert "2025-03-10" in user_msg
         assert "2025-03-05" not in user_msg
 
-        await agent.aclose()
+        agent.close()
 
     @pytest.mark.asyncio
-    async def test_no_files_returns_false(
-        self, cfg: MemclawConfig, fake_backend: FakeBackend
-    ):
+    async def test_no_files_returns_false(self, cfg: MemclawConfig, fake_backend: FakeBackend):
         """If there are no daily files at all, return False."""
         agent = _make_agent(cfg, fake_backend)
         result = await agent._maybe_consolidate(force=True)
         assert result is False
         assert fake_backend.one_shot_calls == []
-        await agent.aclose()
+        agent.close()
 
     @pytest.mark.asyncio
-    async def test_content_limit_30000_chars(
-        self, cfg: MemclawConfig, fake_backend: FakeBackend
-    ):
+    async def test_content_limit_30000_chars(self, cfg: MemclawConfig, fake_backend: FakeBackend):
         """Content gathering should stop at 30000 chars."""
         fake_backend.one_shot_response = "## Consolidated"
         agent = _make_agent(cfg, fake_backend)
@@ -294,19 +267,16 @@ class TestConsolidation:
         user_msg = fake_backend.one_shot_calls[-1]["user"]
         assert len(user_msg) < 35000
 
-        await agent.aclose()
+        agent.close()
 
 
 # ────────────────────────────────────────────────────────────────────
 # Spec #3: MEMORY.md Context Strategy
 # ────────────────────────────────────────────────────────────────────
 
-
 class TestContextStrategy:
     @pytest.mark.asyncio
-    async def test_small_memory_included_in_full(
-        self, cfg: MemclawConfig, fake_backend: FakeBackend
-    ):
+    async def test_small_memory_included_in_full(self, cfg: MemclawConfig, fake_backend: FakeBackend):
         """MEMORY.md under 4000 chars should be included completely."""
         agent = _make_agent(cfg, fake_backend)
 
@@ -317,12 +287,10 @@ class TestContextStrategy:
 
         context = await agent.build_context("hello")
         assert small_content in context
-        await agent.aclose()
+        agent.close()
 
     @pytest.mark.asyncio
-    async def test_large_memory_truncated_with_search(
-        self, cfg: MemclawConfig, fake_backend: FakeBackend
-    ):
+    async def test_large_memory_truncated_with_search(self, cfg: MemclawConfig, fake_backend: FakeBackend):
         """MEMORY.md over 4000 chars: first 2000 + semantic search results."""
         agent = _make_agent(cfg, fake_backend)
 
@@ -337,12 +305,10 @@ class TestContextStrategy:
             score=0.8,
             match_type="vector",
         )
-        agent.search.search = AsyncMock(
-            side_effect=[
-                [memory_chunk],  # file_filter="MEMORY.md" call
-                [],  # general search call
-            ]
-        )
+        agent.search.search = AsyncMock(side_effect=[
+            [memory_chunk],  # file_filter="MEMORY.md" call
+            [],              # general search call
+        ])
 
         context = await agent.build_context("tell me about Python")
 
@@ -353,34 +319,28 @@ class TestContextStrategy:
         calls = agent.search.search.call_args_list
         assert calls[0].kwargs.get("file_filter") == "MEMORY.md"
 
-        await agent.aclose()
+        agent.close()
 
 
 # ────────────────────────────────────────────────────────────────────
 # Spec #9: Startup and Background Sync
 # ────────────────────────────────────────────────────────────────────
 
-
 class TestSyncOptimization:
     @pytest.mark.asyncio
-    async def test_start_calls_sync(
-        self, cfg: MemclawConfig, fake_backend: FakeBackend
-    ):
+    async def test_start_calls_sync(self, cfg: MemclawConfig, fake_backend: FakeBackend):
         """start() should call index.sync() once."""
         agent = _make_agent(cfg, fake_backend)
         agent.index.sync = AsyncMock(return_value=False)
 
         await agent.start()
         agent.index.sync.assert_called_once()
-        await agent.aclose()
+        agent.close()
 
     @pytest.mark.asyncio
-    async def test_background_sync_creates_task(
-        self, cfg: MemclawConfig, fake_backend: FakeBackend
-    ):
+    async def test_background_sync_creates_task(self, cfg: MemclawConfig, fake_backend: FakeBackend):
         """start_background_sync() should create an asyncio task."""
         import asyncio
-
         agent = _make_agent(cfg, fake_backend)
         agent.index.sync = AsyncMock(return_value=False)
 
@@ -393,19 +353,16 @@ class TestSyncOptimization:
             await agent._sync_task
         except asyncio.CancelledError:
             pass
-        await agent.aclose()
+        agent.close()
 
 
 # ────────────────────────────────────────────────────────────────────
 # Filesystem Guardrail (now in ToolExecutor)
 # ────────────────────────────────────────────────────────────────────
 
-
 class TestFilesystemGuardrail:
     @pytest.mark.asyncio
-    async def test_allows_write_inside_memory_dir(
-        self, cfg: MemclawConfig, fake_backend: FakeBackend
-    ):
+    async def test_allows_write_inside_memory_dir(self, cfg: MemclawConfig, fake_backend: FakeBackend):
         """file_write to a path under memory_dir should succeed."""
         agent = _make_agent(cfg, fake_backend)
 
@@ -415,12 +372,10 @@ class TestFilesystemGuardrail:
         )
         assert "File written" in result
         assert (cfg.memory_dir / "todos.md").exists()
-        await agent.aclose()
+        agent.close()
 
     @pytest.mark.asyncio
-    async def test_blocks_write_outside_memory_dir(
-        self, cfg: MemclawConfig, fake_backend: FakeBackend
-    ):
+    async def test_blocks_write_outside_memory_dir(self, cfg: MemclawConfig, fake_backend: FakeBackend):
         """file_write to a path outside memory_dir should be blocked."""
         agent = _make_agent(cfg, fake_backend)
 
@@ -429,12 +384,10 @@ class TestFilesystemGuardrail:
             {"file_path": "/tmp/evil.md", "content": "bad"},
         )
         assert "Blocked" in result
-        await agent.aclose()
+        agent.close()
 
     @pytest.mark.asyncio
-    async def test_blocks_write_to_home_dir(
-        self, cfg: MemclawConfig, fake_backend: FakeBackend
-    ):
+    async def test_blocks_write_to_home_dir(self, cfg: MemclawConfig, fake_backend: FakeBackend):
         """file_write to ~/something.md should be blocked."""
         agent = _make_agent(cfg, fake_backend)
 
@@ -443,29 +396,22 @@ class TestFilesystemGuardrail:
             {"file_path": str(Path.home() / "todos.md"), "content": "bad"},
         )
         assert "Blocked" in result
-        await agent.aclose()
+        agent.close()
 
     @pytest.mark.asyncio
-    async def test_blocks_path_traversal(
-        self, cfg: MemclawConfig, fake_backend: FakeBackend
-    ):
+    async def test_blocks_path_traversal(self, cfg: MemclawConfig, fake_backend: FakeBackend):
         """Path traversal attempts (../../etc) should be blocked."""
         agent = _make_agent(cfg, fake_backend)
 
         result = await agent._tools.execute(
             "file_write",
-            {
-                "file_path": str(cfg.memory_dir / ".." / ".." / "etc" / "passwd"),
-                "content": "bad",
-            },
+            {"file_path": str(cfg.memory_dir / ".." / ".." / "etc" / "passwd"), "content": "bad"},
         )
         assert "Blocked" in result
-        await agent.aclose()
+        agent.close()
 
     @pytest.mark.asyncio
-    async def test_allows_nested_path_inside_memory_dir(
-        self, cfg: MemclawConfig, fake_backend: FakeBackend
-    ):
+    async def test_allows_nested_path_inside_memory_dir(self, cfg: MemclawConfig, fake_backend: FakeBackend):
         """Writing to a subdirectory of memory_dir should work."""
         agent = _make_agent(cfg, fake_backend)
 
@@ -475,12 +421,10 @@ class TestFilesystemGuardrail:
         )
         assert "File written" in result
         assert (cfg.memory_dir / "subdir" / "file.md").exists()
-        await agent.aclose()
+        agent.close()
 
     @pytest.mark.asyncio
-    async def test_blocks_read_outside(
-        self, cfg: MemclawConfig, fake_backend: FakeBackend
-    ):
+    async def test_blocks_read_outside(self, cfg: MemclawConfig, fake_backend: FakeBackend):
         """file_read outside memory_dir should be blocked."""
         agent = _make_agent(cfg, fake_backend)
 
@@ -489,12 +433,10 @@ class TestFilesystemGuardrail:
             {"file_path": "/etc/hosts"},
         )
         assert "Blocked" in result
-        await agent.aclose()
+        agent.close()
 
     @pytest.mark.asyncio
-    async def test_file_read_returns_content(
-        self, cfg: MemclawConfig, fake_backend: FakeBackend
-    ):
+    async def test_file_read_returns_content(self, cfg: MemclawConfig, fake_backend: FakeBackend):
         """file_read should return content for files inside memory_dir."""
         agent = _make_agent(cfg, fake_backend)
 
@@ -504,7 +446,7 @@ class TestFilesystemGuardrail:
             {"file_path": "test.md"},
         )
         assert result == "hello world"
-        await agent.aclose()
+        agent.close()
 
 
 class TestSandboxedFileTools:
@@ -522,16 +464,10 @@ class TestSandboxedFileTools:
 
         names = [t["name"] for t in TOOL_DEFINITIONS]
         expected = {
-            "memory_save",
-            "memory_search",
-            "image_save",
-            "image_search",
-            "update_instructions",
-            "file_write",
-            "file_read",
-            "reminder_create",
-            "reminder_list",
-            "reminder_cancel",
+            "memory_save", "memory_search",
+            "image_save", "image_search",
+            "update_instructions", "file_write", "file_read",
+            "reminder_create", "reminder_list", "reminder_cancel",
         }
         assert set(names) == expected
         assert len(names) == len(expected)

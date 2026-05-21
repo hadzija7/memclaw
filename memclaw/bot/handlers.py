@@ -79,9 +79,7 @@ class MessageHandlers:
 
         if response_text:
             try:
-                await update.message.reply_text(
-                    response_text[:4096], parse_mode="Markdown"
-                )
+                await update.message.reply_text(response_text[:4096], parse_mode="Markdown")
             except Exception as e:
                 # Fall back to plain text if the agent emitted something Telegram's
                 # legacy Markdown parser rejects (unbalanced * or _, etc.).
@@ -190,11 +188,8 @@ class MessageHandlers:
             prompt_text += link_info
 
         await self._send_with_typing(
-            update,
-            context,
-            prompt_text,
-            image_b64=base64_image,
-            image_media_type="image/jpeg",
+            update, context, prompt_text,
+            image_b64=base64_image, image_media_type="image/jpeg",
         )
 
     async def handle_voice(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -233,10 +228,6 @@ class MessageHandlers:
         )
         await self._send_with_typing(update, context, prompt)
 
-    async def aclose(self) -> None:
-        self.scheduler.close()
-        await self.agent.aclose()
-
-    def close(self) -> None:
+    def close(self):
         self.scheduler.close()
         self.agent.close()
