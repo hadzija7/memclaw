@@ -94,7 +94,13 @@ def _agent_options(
 
 
 def _log_tool_call(name: str, args: Any) -> None:
-    args_str = json.dumps(args, ensure_ascii=False) if args is not None else "{}"
+    if args is None:
+        args_str = "{}"
+    else:
+        try:
+            args_str = json.dumps(args, ensure_ascii=False)
+        except (TypeError, ValueError):
+            args_str = str(args)
     if len(args_str) > 300:
         args_str = args_str[:300] + "..."
     tool_name = name
