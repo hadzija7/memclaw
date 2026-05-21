@@ -120,6 +120,7 @@ async def _collect_run_result(run: Any, *, max_turns: int) -> TurnResult:
     """Drain the run stream for logging and return a normalized TurnResult."""
     last_text = ""
     tool_steps = 0
+    cancelled_for_cap = False
 
     async for message in run.messages():
         msg_type = getattr(message, "type", None)
@@ -133,7 +134,14 @@ async def _collect_run_result(run: Any, *, max_turns: int) -> TurnResult:
             if max_turns > 0 and tool_steps > max_turns:
                 logger.debug("Cursor run capped at max_turns={max}", max=max_turns)
                 await run.cancel()
+                cancelled_for_cap = True
                 break
+
+    if cancelled_for_cap:
+        num_turns = max(tool_steps, 1)
+        if max_turns > 0:
+            num_turns = min(num_turns, max_turns)
+        return TurnResult(text=last_text, num_turns=num_turns)
 
     wait_result = await run.wait()
     wait_text = _extract_run_text(wait_result)

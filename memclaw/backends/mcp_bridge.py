@@ -9,7 +9,6 @@ from contextlib import asynccontextmanager
 from typing import TYPE_CHECKING, Any
 
 import uvicorn
-from cursor_sdk import HttpMcpServerConfig
 from mcp.server.streamable_http_manager import StreamableHTTPSessionManager
 from starlette.applications import Starlette
 from starlette.routing import Route
@@ -17,6 +16,8 @@ from starlette.routing import Route
 from .mcp_tools import MCP_SERVER_NAME, build_memclaw_mcp_server
 
 if TYPE_CHECKING:
+    from cursor_sdk import HttpMcpServerConfig
+
     from ..tools import ToolExecutor
 
 
@@ -60,6 +61,8 @@ class EphemeralHttpMcpBridge:
         self._uvicorn_task: asyncio.Task[None] | None = None
 
     async def __aenter__(self) -> HttpMcpServerConfig:
+        from cursor_sdk import HttpMcpServerConfig
+
         mcp_server = build_memclaw_mcp_server(self._executor)
         self._session_manager = StreamableHTTPSessionManager(
             app=mcp_server,
