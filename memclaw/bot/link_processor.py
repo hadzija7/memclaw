@@ -3,8 +3,9 @@ from __future__ import annotations
 import re
 from urllib.parse import urlparse
 
-import httpx
 from bs4 import BeautifulSoup
+from curl_cffi.requests import AsyncSession
+from loguru import logger
 from openai import AsyncOpenAI
 
 
@@ -32,25 +33,21 @@ class LinkProcessor:
 
     async def fetch_content(self, url: str, timeout: float = 10.0) -> str | None:
         try:
-            async with httpx.AsyncClient(
-                timeout=timeout,
-                follow_redirects=True,
-                headers={
-                    "User-Agent": (
-                        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
-                        "AppleWebKit/537.36 (KHTML, like Gecko) "
-                        "Chrome/120.0.0.0 Safari/537.36"
-                    )
-                },
-            ) as client:
-                response = await client.get(url)
+            async with AsyncSession() as session:
+                response = await session.get(
+                    url,
+                    timeout=timeout,
+                    allow_redirects=True,
+                    impersonate="chrome120",
+                )
                 response.raise_for_status()
 
                 if "text/html" not in response.headers.get("content-type", ""):
                     return None
 
                 return self._extract_text(response.text)
-        except Exception:
+        except Exception as exc:
+            logger.warning("fetch_content failed for {url}: {exc}", url=url, exc=exc)
             return None
 
     @staticmethod
