@@ -167,7 +167,6 @@ class CursorAgentBackend:
         self._api_key = _cursor_api_key(config)
         self._model = _cursor_model(config)
         self._cwd = str(config.memory_dir)
-        self._client: Any = None
         self.bills_per_token = True
 
     @classmethod
@@ -213,19 +212,10 @@ class CursorAgentBackend:
 
         return values, list(_DROP_KEYS)
 
-    async def _ensure_client(self) -> Any:
-        if self._client is not None:
-            return self._client
+    async def _launch_client(self) -> Any:
         from cursor_sdk import AsyncClient
 
-        self._client = await AsyncClient.launch_bridge(workspace=self._cwd)
-        return self._client
-
-    async def close(self) -> None:
-        client = self._client
-        self._client = None
-        if client is not None:
-            await client.aclose()
+        return await AsyncClient.launch_bridge(workspace=self._cwd)
 
     async def run_one_shot(self, *, system_prompt: str, user_message: str) -> str:
         from cursor_sdk import AsyncAgent, CursorAgentError
@@ -243,8 +233,8 @@ class CursorAgentBackend:
             model=self._model,
         )
 
+        client = await self._launch_client()
         try:
-            client = await self._ensure_client()
             result = await AsyncAgent.prompt(prompt, options, client=client)
             text = _extract_run_text(result)
             if not text.strip():
@@ -253,6 +243,8 @@ class CursorAgentBackend:
         except CursorAgentError as exc:
             logger.error("Cursor SDK one-shot failed: {msg}", msg=exc.message)
             raise RuntimeError(f"Cursor SDK error: {exc.message}") from exc
+        finally:
+            await client.aclose()
 
     async def run_turn(
         self,
@@ -276,8 +268,8 @@ class CursorAgentBackend:
             image_media_type=image_media_type,
         )
 
+        client = await self._launch_client()
         try:
-            client = await self._ensure_client()
             async with EphemeralHttpMcpBridge(tool_executor) as mcp_config:
                 mcp_servers = mcp_servers_for(mcp_config)
                 agent = await client.agents.create(
@@ -303,3 +295,5 @@ class CursorAgentBackend:
         except CursorAgentError as exc:
             logger.error("Cursor SDK turn failed: {msg}", msg=exc.message)
             raise RuntimeError(f"Cursor SDK error: {exc.message}") from exc
+        finally:
+            await client.aclose()

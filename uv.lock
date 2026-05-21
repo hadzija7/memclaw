@@ -941,7 +941,6 @@ dependencies = [
     { name = "beautifulsoup4" },
     { name = "claude-agent-sdk" },
     { name = "click" },
-    { name = "cursor-sdk" },
     { name = "httpx" },
     { name = "loguru" },
     { name = "neonize" },
@@ -955,7 +954,11 @@ dependencies = [
 ]
 
 [package.optional-dependencies]
+cursor = [
+    { name = "cursor-sdk" },
+]
 dev = [
+    { name = "cursor-sdk" },
     { name = "pytest" },
     { name = "pytest-asyncio" },
     { name = "ruff" },
@@ -967,7 +970,8 @@ requires-dist = [
     { name = "beautifulsoup4", specifier = ">=4.12.0" },
     { name = "claude-agent-sdk", specifier = ">=0.1.59,<0.2" },
     { name = "click", specifier = ">=8.0.0" },
-    { name = "cursor-sdk", specifier = ">=0.1.0" },
+    { name = "cursor-sdk", marker = "extra == 'cursor'", specifier = ">=0.1.0" },
+    { name = "cursor-sdk", marker = "extra == 'dev'", specifier = ">=0.1.0" },
     { name = "httpx", specifier = ">=0.27.0" },
     { name = "loguru", specifier = ">=0.7.0" },
     { name = "neonize", specifier = ">=0.3.16" },
@@ -981,7 +985,7 @@ requires-dist = [
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.9.0" },
     { name = "slack-bolt", specifier = ">=1.18.0" },
 ]
-provides-extras = ["dev"]
+provides-extras = ["cursor", "dev"]
 
 [[package]]
 name = "multidict"
