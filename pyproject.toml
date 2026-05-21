@@ -38,7 +38,6 @@ dependencies = [
     "loguru>=0.7.0",
     "python-dotenv>=1.0.0",
     "neonize>=0.3.16",
-    "cursor-sdk>=0.1.0",
 ]
 
 [project.scripts]
@@ -49,10 +48,14 @@ Repository = "https://github.com/emanuilo/memclaw"
 Issues = "https://github.com/emanuilo/memclaw/issues"
 
 [project.optional-dependencies]
+cursor = [
+    "cursor-sdk>=0.1.0",
+]
 dev = [
     "pytest>=9.0.0",
     "pytest-asyncio>=1.0.0",
     "ruff>=0.9.0",
+    "cursor-sdk>=0.1.0",
 ]
 
 [tool.hatch.build.targets.wheel]
