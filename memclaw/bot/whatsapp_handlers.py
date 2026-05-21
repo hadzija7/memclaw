@@ -24,6 +24,7 @@ from neonize.utils.jid import build_jid
 from ..agent import MemclawAgent
 from ..config import MemclawConfig
 from ..reminders import ReminderScheduler
+from . import mask_user_id
 from .link_processor import LinkProcessor
 
 
@@ -62,7 +63,7 @@ class WhatsAppBot:
 
         @self.client.event(PairStatusEv)
         async def _on_pair(_cli: NewAClient, ev: PairStatusEv):
-            logger.info("WhatsApp paired as +{jid}", jid=ev.ID.User)
+            logger.info("WhatsApp paired as +{jid}", jid=mask_user_id(ev.ID.User))
 
         @self.client.event(MessageEv)
         async def _on_message(cli: NewAClient, ev: MessageEv):
@@ -123,7 +124,7 @@ class WhatsAppBot:
 
     async def _handle_text(self, cli: NewAClient, ev: MessageEv, text: str):
         sender = ev.Info.MessageSource.Sender.User
-        logger.info("WhatsApp text from {s}: {t}", s=sender, t=text[:100])
+        logger.info("WhatsApp text from {s}: {t}", s=mask_user_id(sender), t=text[:100])
 
         prompt_parts = [text]
         links = await self.link_processor.process_links(text)
@@ -146,7 +147,7 @@ class WhatsAppBot:
         img_msg = ev.Message.imageMessage
         caption = img_msg.caption or ""
         sender = ev.Info.MessageSource.Sender.User
-        logger.info("WhatsApp image from {s}, caption={c!r}", s=sender, c=caption)
+        logger.info("WhatsApp image from {s}, caption={c!r}", s=mask_user_id(sender), c=caption)
 
         try:
             image_bytes = await cli.download_any(ev.Message)
@@ -194,7 +195,7 @@ class WhatsAppBot:
     async def _handle_audio(self, cli: NewAClient, ev: MessageEv):
         audio_msg = ev.Message.audioMessage
         sender = ev.Info.MessageSource.Sender.User
-        logger.info("WhatsApp voice/audio from {s}", s=sender)
+        logger.info("WhatsApp voice/audio from {s}", s=mask_user_id(sender))
 
         try:
             audio_bytes = await cli.download_any(ev.Message)

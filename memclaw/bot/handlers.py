@@ -18,6 +18,7 @@ from telegram.ext import ContextTypes
 from ..agent import MemclawAgent
 from ..config import MemclawConfig
 from ..reminders import ReminderScheduler
+from . import mask_user_id
 from .link_processor import LinkProcessor
 
 
@@ -133,7 +134,7 @@ class MessageHandlers:
             return
 
         text = update.message.text
-        logger.info(f"Text from user {update.effective_user.id}: {text[:100]}")
+        logger.info(f"Text from user {mask_user_id(update.effective_user.id)}: {text[:100]}")
 
         prompt_parts: list[str] = []
         replied = update.message.reply_to_message
@@ -162,7 +163,7 @@ class MessageHandlers:
         photo = update.message.photo[-1]
         caption = update.message.caption or ""
 
-        logger.info(f"Photo from user {update.effective_user.id}, caption={caption!r}")
+        logger.info(f"Photo from user {mask_user_id(update.effective_user.id)}, caption={caption!r}")
 
         # Download photo and base64 encode
         file = await context.bot.get_file(photo.file_id)
@@ -197,7 +198,7 @@ class MessageHandlers:
             return
 
         voice = update.message.voice
-        logger.info(f"Voice from user {update.effective_user.id}")
+        logger.info(f"Voice from user {mask_user_id(update.effective_user.id)}")
 
         # Download and transcribe
         file = await context.bot.get_file(voice.file_id)

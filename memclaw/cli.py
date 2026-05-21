@@ -8,6 +8,7 @@ from rich.console import Console
 from rich.markdown import Markdown
 from rich.panel import Panel
 
+from .bot import mask_user_id
 from .config import MemclawConfig
 from .index import MemoryIndex
 from .search import HybridSearch
@@ -379,9 +380,11 @@ def telegram(ctx):
     app.add_handler(MessageHandler(filters.PHOTO, _photo))
     app.add_handler(MessageHandler(filters.VOICE, _voice))
 
+    allowed = config.allowed_user_ids_list
+    masked = [mask_user_id(u) for u in allowed] if allowed else "all"
     console.print(
         f"[green]Starting Memclaw Telegram bot...[/green]  "
-        f"(allowed users: {config.allowed_user_ids_list or 'all'})"
+        f"(allowed users: {masked})"
     )
     app.run_polling(allowed_updates=["message"])
 
