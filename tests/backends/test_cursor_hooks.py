@@ -77,6 +77,8 @@ class TestHookInstallation:
         assert not cursor_hooks_installed(tmp_path)
         assert ensure_cursor_hooks(tmp_path) is True
         assert cursor_hooks_json_path(tmp_path).is_file()
+        data = json.loads(cursor_hooks_json_path(tmp_path).read_text(encoding="utf-8"))
+        assert data.get("version") == 1
         assert cursor_hook_script_path(tmp_path).is_file()
         assert cursor_hooks_installed(tmp_path) is True
         assert cursor_hooks_status(tmp_path).startswith("ready")

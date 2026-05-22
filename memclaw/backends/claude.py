@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import os
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, AsyncIterator, ClassVar
 
 from claude_agent_sdk import (
@@ -198,6 +199,8 @@ class ClaudeAgentBackend:
         cls,
         console: "Console",
         existing: dict[str, str],
+        *,
+        memory_dir: Path | str | None = None,
     ) -> tuple[dict[str, str], list[str]]:
         """Ask whether to use a subscription or API key, then prompt the
         chosen credential. Returns (values_to_save, env_keys_to_drop).

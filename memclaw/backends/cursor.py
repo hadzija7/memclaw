@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, ClassVar
 
 from loguru import logger
@@ -207,6 +208,8 @@ class CursorAgentBackend:
         cls,
         console: "Console",
         existing: dict[str, str],
+        *,
+        memory_dir: Path | str | None = None,
     ) -> tuple[dict[str, str], list[str]]:
         from ..setup import _masked_input
 
@@ -232,7 +235,8 @@ class CursorAgentBackend:
 
         from ..config import MemclawConfig
 
-        ensure_cursor_hooks(MemclawConfig().memory_dir)
+        cfg = MemclawConfig(memory_dir=Path(memory_dir)) if memory_dir else MemclawConfig()
+        ensure_cursor_hooks(cfg.memory_dir)
 
         return values, list(_DROP_KEYS)
 

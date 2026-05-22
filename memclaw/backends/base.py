@@ -14,7 +14,8 @@ should need SDK-specific imports.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, ClassVar, Protocol, runtime_checkable
+from pathlib import Path
+from typing import TYPE_CHECKING, ClassVar, Protocol, runtime_checkable
 
 if TYPE_CHECKING:
     from rich.console import Console
@@ -73,6 +74,8 @@ class AgentBackend(Protocol):
         cls,
         console: "Console",
         existing: dict[str, str],
+        *,
+        memory_dir: Path | str | None = None,
     ) -> tuple[dict[str, str], list[str]]:
         """Interactively collect this backend's env-var values.
 
@@ -83,6 +86,8 @@ class AgentBackend(Protocol):
         Args:
             console: Rich console for output / prompts.
             existing: env-var values already loaded from ``.env``.
+            memory_dir: Active Memclaw memory directory (from ``--memory-dir``),
+                or the default when omitted.
 
         Returns:
             A `(values, drop_keys)` pair.

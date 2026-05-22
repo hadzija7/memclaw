@@ -47,7 +47,7 @@ def _ensure_setup(ctx, channel: str | None = None):
     `channel` scopes which optional keys are prompted for (e.g. "telegram").
     """
     if needs_setup():
-        run_setup(channel=channel)
+        run_setup(channel=channel, memory_dir=ctx.obj.get("memory_dir"))
         # Reload .env so newly saved keys are picked up
         from dotenv import load_dotenv
         load_dotenv(Path.home() / ".memclaw" / ".env", override=True)
@@ -284,7 +284,7 @@ def status(ctx):
 @click.pass_context
 def configure(ctx):
     """Update API keys and settings."""
-    run_setup(reconfigure=True)
+    run_setup(reconfigure=True, memory_dir=ctx.obj.get("memory_dir"))
 
 
 @cli.command()
