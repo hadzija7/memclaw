@@ -1,0 +1,10 @@
+{
+  "hooks": {
+    "preToolUse": [
+      {
+        "command": "python3 ./hooks/allow_memclaw_tools.py",
+        "failClosed": true
+      }
+    ]
+  }
+}

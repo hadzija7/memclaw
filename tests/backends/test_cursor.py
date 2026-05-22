@@ -17,6 +17,7 @@ from memclaw.backends.cursor import (
     _build_user_message,
     _collect_run_result,
 )
+from memclaw.backends.cursor_hooks import cursor_hooks_installed
 from memclaw.config import MemclawConfig
 
 
@@ -81,6 +82,7 @@ class TestCursorAgentBackendConfig:
         assert backend._model == "composer-2.5"
         assert backend._cwd == str(cfg.memory_dir)
         assert backend.bills_per_token is True
+        assert cursor_hooks_installed(cfg.memory_dir) is True
 
 
 class TestPromptBuilding:

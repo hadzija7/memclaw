@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING, Any, ClassVar
 from loguru import logger
 
 from .base import TurnResult
+from .cursor_hooks import cursor_hooks_status, ensure_cursor_hooks
 from .mcp_bridge import EphemeralHttpMcpBridge, mcp_servers_for
 from .mcp_tools import MCP_SERVER_NAME
 
@@ -174,6 +175,17 @@ class CursorAgentBackend:
         self._model = _cursor_model(config)
         self._cwd = str(config.memory_dir)
         self.bills_per_token = True
+        self._ensure_tool_hooks()
+
+    def _ensure_tool_hooks(self) -> None:
+        if ensure_cursor_hooks(self.config.memory_dir):
+            return
+        status = cursor_hooks_status(self.config.memory_dir)
+        logger.warning(
+            "Cursor tool-restriction hooks are not ready ({status}). "
+            "Built-in Cursor tools may be used until hooks are installed.",
+            status=status,
+        )
 
     @classmethod
     def is_configured(cls, config: "MemclawConfig") -> bool:
@@ -185,7 +197,9 @@ class CursorAgentBackend:
             "Cursor SDK backend requires CURSOR_API_KEY "
             "(Cursor Dashboard → Integrations, or a team service account key).\n"
             "Optional: CURSOR_MODEL (default: composer-2.5).\n"
-            "Set AGENT_BACKEND=cursor in ~/.memclaw/.env to use this backend."
+            "Set AGENT_BACKEND=cursor in ~/.memclaw/.env to use this backend.\n"
+            "Memclaw installs ~/.memclaw/.cursor/hooks.json to block built-in "
+            "Cursor tools and allow only Memclaw MCP tools."
         )
 
     @classmethod
@@ -215,6 +229,10 @@ class CursorAgentBackend:
         )
         if model_answer.strip():
             values["CURSOR_MODEL"] = model_answer.strip()
+
+        from ..config import MemclawConfig
+
+        ensure_cursor_hooks(MemclawConfig().memory_dir)
 
         return values, list(_DROP_KEYS)
 
