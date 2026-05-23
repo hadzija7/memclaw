@@ -141,7 +141,7 @@ async def _interactive(config: MemclawConfig):
                 console.print(Markdown(response))
             console.print()
     finally:
-        agent.close()
+        await agent.aclose()
         console.print("\nGoodbye! Your memories are safe.")
 
 
@@ -341,7 +341,7 @@ def telegram(ctx):
     async def post_shutdown(application: Application) -> None:
         handlers = application.bot_data.get("handlers")
         if handlers:
-            handlers.close()
+            await handlers.aclose()
             logger.info("Memclaw bot shut down cleanly")
 
     app = (
@@ -439,12 +439,15 @@ def whatsapp(ctx):
             "Open WhatsApp → Settings → Linked Devices → Link a Device, and scan it."
         )
 
-    try:
-        asyncio.run(bot_.start())
-    except KeyboardInterrupt:
-        pass
-    finally:
-        bot_.close()
+    async def _run():
+        try:
+            await bot_.start()
+        except KeyboardInterrupt:
+            pass
+        finally:
+            await bot_.aclose()
+
+    asyncio.run(_run())
 
 
 # ------------------------------------------------------------------
@@ -507,7 +510,7 @@ def slack(ctx):
         except KeyboardInterrupt:
             pass
         finally:
-            handlers.close()
+            await handlers.aclose()
             console.print("\nMemclaw Slack bot shut down.")
 
     asyncio.run(_run())

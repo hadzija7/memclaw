@@ -307,8 +307,9 @@ Set `AGENT_BACKEND=cursor` to use the [Cursor Python SDK](https://pypi.org/proje
 
 - **`CURSOR_API_KEY`** (required) — from Cursor Dashboard → Integrations, or a team service account key.
 - **`CURSOR_MODEL`** (optional) — defaults to `composer-2.5`.
+- **`MEMCLAW_MCP_PORT`** (optional) — local MCP HTTP port (default `17373`).
 
-Memclaw tools (`memory_save`, reminders, etc.) are exposed to the Cursor agent via an in-process HTTP MCP server, matching the Claude backend's tool surface.
+Memclaw tools (`memory_save`, reminders, etc.) are exposed to the Cursor agent via a long-lived local HTTP MCP server on `127.0.0.1`, started and stopped with Memclaw. The port defaults to **17373** (`MEMCLAW_MCP_PORT`), matching the Claude backend's tool surface.
 
 ### Environment variables
 
@@ -320,6 +321,7 @@ Memclaw tools (`memory_save`, reminders, etc.) are exposed to the Cursor agent v
 | `AGENT_BACKEND` | Optional | Agent SDK to use (defaults to `claude`; set to `cursor` for Cursor SDK) |
 | `CURSOR_API_KEY` | For Cursor backend | Cursor API key from Dashboard → Integrations |
 | `CURSOR_MODEL` | For Cursor backend | Cursor model name (defaults to `composer-2.5`) |
+| `MEMCLAW_MCP_PORT` | For Cursor backend | Local MCP HTTP port (defaults to `17373`) |
 | `TELEGRAM_BOT_TOKEN` | For Telegram bot | Your Telegram bot token |
 | `ALLOWED_USER_IDS` | For Telegram bot | Comma-separated Telegram user IDs |
 | `SLACK_BOT_TOKEN` | For Slack bot | Slack bot token (`xoxb-...`) |

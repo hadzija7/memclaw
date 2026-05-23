@@ -11,7 +11,7 @@ from loguru import logger
 
 from .base import TurnResult
 from .cursor_hooks import cursor_hooks_status, ensure_cursor_hooks
-from .mcp_bridge import EphemeralHttpMcpBridge, mcp_servers_for
+from .mcp_bridge import HttpMcpServer, mcp_servers_for
 from .mcp_tools import MCP_SERVER_NAME
 
 if TYPE_CHECKING:
@@ -176,6 +176,7 @@ class CursorAgentBackend:
         self._model = _cursor_model(config)
         self._cwd = str(config.memory_dir)
         self.bills_per_token = True
+        self._mcp_server = HttpMcpServer()
         self._ensure_tool_hooks()
 
     def _ensure_tool_hooks(self) -> None:
@@ -198,6 +199,7 @@ class CursorAgentBackend:
             "Cursor SDK backend requires CURSOR_API_KEY "
             "(Cursor Dashboard → Integrations, or a team service account key).\n"
             "Optional: CURSOR_MODEL (default: composer-2.5).\n"
+            "Optional: MEMCLAW_MCP_PORT (default: 17373) for the local MCP HTTP server.\n"
             "Set AGENT_BACKEND=cursor in ~/.memclaw/.env to use this backend.\n"
             "Memclaw installs ~/.memclaw/.cursor/hooks.json to block built-in "
             "Cursor tools and allow only Memclaw MCP tools."
@@ -244,6 +246,15 @@ class CursorAgentBackend:
         from cursor_sdk import AsyncClient
 
         return await AsyncClient.launch_bridge(workspace=self._cwd)
+
+    async def start_mcp_server(self, tool_executor: "ToolExecutor") -> None:
+        await self._mcp_server.start(
+            tool_executor,
+            port=self.config.mcp_http_port,
+        )
+
+    async def stop_mcp_server(self) -> None:
+        await self._mcp_server.stop()
 
     async def run_one_shot(self, *, system_prompt: str, user_message: str) -> str:
         from cursor_sdk import AsyncAgent, CursorAgentError
@@ -298,24 +309,28 @@ class CursorAgentBackend:
 
         client = await self._launch_client()
         try:
-            async with EphemeralHttpMcpBridge(tool_executor) as mcp_config:
-                mcp_servers = mcp_servers_for(mcp_config)
-                agent = await client.agents.create(
-                    _agent_options(
-                        api_key=self._api_key,
-                        cwd=self._cwd,
-                        model=self._model,
-                        mcp_servers=mcp_servers,
-                    )
+            mcp_config = self._mcp_server.config
+            if mcp_config is None:
+                raise RuntimeError(
+                    "MCP server not started; call MemclawAgent.start() before run_turn"
                 )
-                try:
-                    run = await agent.send(
-                        message,
-                        SendOptions(mcp_servers=mcp_servers),
-                    )
-                    result = await _collect_run_result(run, max_turns=max_turns)
-                finally:
-                    await agent.close()
+            mcp_servers = mcp_servers_for(mcp_config)
+            agent = await client.agents.create(
+                _agent_options(
+                    api_key=self._api_key,
+                    cwd=self._cwd,
+                    model=self._model,
+                    mcp_servers=mcp_servers,
+                )
+            )
+            try:
+                run = await agent.send(
+                    message,
+                    SendOptions(mcp_servers=mcp_servers),
+                )
+                result = await _collect_run_result(run, max_turns=max_turns)
+            finally:
+                await agent.close()
 
             if not result.text.strip():
                 result.text = "I couldn't generate a response."

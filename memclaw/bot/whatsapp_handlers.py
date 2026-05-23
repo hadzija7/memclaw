@@ -277,6 +277,10 @@ class WhatsAppBot:
         await self.client.connect()
         await self.client.idle()
 
+    async def aclose(self):
+        await self.agent.aclose()
+        self.scheduler.close()
+
     def close(self):
         self.scheduler.close()
         self.agent.close()

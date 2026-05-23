@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, PropertyMock, patch
 
 import pytest
 from cursor_sdk import HttpMcpServerConfig
@@ -17,6 +17,7 @@ from memclaw.backends.cursor import (
     _build_user_message,
     _collect_run_result,
 )
+from memclaw.backends.mcp_bridge import HttpMcpServer
 from memclaw.backends.cursor_hooks import cursor_hooks_installed
 from memclaw.config import MemclawConfig
 
@@ -195,14 +196,10 @@ class TestCursorAgentBackendRuns:
         mock_client.agents.create = AsyncMock(return_value=mock_agent)
         mock_mcp = HttpMcpServerConfig(url="http://127.0.0.1:8765/mcp", type="http")
 
-        with patch("cursor_sdk.AsyncClient") as mock_client_cls, patch(
-            "memclaw.backends.cursor.EphemeralHttpMcpBridge"
-        ) as mock_bridge_cls:
+        with patch("cursor_sdk.AsyncClient") as mock_client_cls, patch.object(
+            HttpMcpServer, "config", new_callable=PropertyMock, return_value=mock_mcp
+        ):
             mock_client_cls.launch_bridge = AsyncMock(return_value=mock_client)
-            bridge = AsyncMock()
-            bridge.__aenter__ = AsyncMock(return_value=mock_mcp)
-            bridge.__aexit__ = AsyncMock(return_value=None)
-            mock_bridge_cls.return_value = bridge
 
             result = await backend.run_turn(
                 system_prompt="System",
@@ -220,6 +217,43 @@ class TestCursorAgentBackendRuns:
         assert send_options.mcp_servers == {"memclaw": mock_mcp}
         mock_agent.send.assert_awaited_once()
         mock_agent.close.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_run_turn_without_mcp_server_raises(self, tmp_path):
+        cfg = _make_config(tmp_path, cursor_api_key="crsr_test_key")
+        backend = CursorAgentBackend(cfg)
+
+        with patch("cursor_sdk.AsyncClient") as mock_client_cls:
+            mock_client_cls.launch_bridge = AsyncMock(return_value=AsyncMock())
+            with pytest.raises(RuntimeError, match="MCP server not started"):
+                await backend.run_turn(
+                    system_prompt="System",
+                    user_message="User",
+                    tool_executor=MagicMock(),
+                )
+
+    @pytest.mark.asyncio
+    async def test_agent_start_starts_mcp_server(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("AGENT_BACKEND", "cursor")
+        cfg = _make_config(tmp_path, cursor_api_key="crsr_test_key")
+        cfg.agent_backend = "cursor"
+
+        from memclaw.agent import MemclawAgent
+
+        agent = MemclawAgent(cfg, platform="telegram")
+        assert isinstance(agent.backend, CursorAgentBackend)
+
+        with patch.object(agent.index, "sync", new_callable=AsyncMock), patch.object(
+            CursorAgentBackend, "start_mcp_server", new_callable=AsyncMock
+        ) as mock_start:
+            await agent.start()
+            mock_start.assert_awaited_once_with(agent._tools)
+
+        with patch.object(
+            CursorAgentBackend, "stop_mcp_server", new_callable=AsyncMock
+        ) as mock_stop:
+            await agent.aclose()
+            mock_stop.assert_awaited_once()
 
 
 async def _empty_messages():
