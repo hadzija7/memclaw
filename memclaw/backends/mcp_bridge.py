@@ -113,6 +113,7 @@ class HttpMcpServer:
             self._listen_sock = listen_sock
             listen_sock = None
         except OSError as exc:
+            await self.stop()
             raise OSError(
                 f"Cannot bind MCP HTTP server to {host}:{port} — "
                 f"is another process using the port? Set MEMCLAW_MCP_PORT to a free port. "

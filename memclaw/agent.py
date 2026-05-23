@@ -58,6 +58,19 @@ future conversation.
 """
 
 
+def _stop_cursor_mcp_sync(backend: CursorAgentBackend) -> None:
+    """Stop the local MCP server from synchronous shutdown paths."""
+    if not backend._mcp_server.is_running:
+        return
+    coro = backend.stop_mcp_server()
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        asyncio.run(coro)
+    else:
+        loop.create_task(coro)
+
+
 def _load_agent_instructions(config: MemclawConfig) -> str:
     agent_file = config.agent_file
     if agent_file.exists():
@@ -379,6 +392,8 @@ class MemclawAgent:
         return (response_text, list(self._found_images))
 
     def close(self):
+        if isinstance(self.backend, CursorAgentBackend):
+            _stop_cursor_mcp_sync(self.backend)
         task = getattr(self, "_sync_task", None)
         if task is not None and not task.done():
             task.cancel()
