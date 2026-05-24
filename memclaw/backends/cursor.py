@@ -172,11 +172,9 @@ def _assistant_message_text(message: Any) -> str:
     return "".join(parts)
 
 
-async def _collect_run_result(run: Any, *, max_turns: int) -> TurnResult:
+async def _collect_run_result(run: Any) -> TurnResult:
     """Drain the run stream for logging and return a normalized TurnResult."""
     last_text = ""
-    tool_steps = 0
-    cancelled_for_cap = False
     pending_tools: dict[str, str] = {}
 
     async for message in run.messages():
@@ -193,12 +191,6 @@ async def _collect_run_result(run: Any, *, max_turns: int) -> TurnResult:
             if status == "running":
                 _log_tool_call(name, args)
                 pending_tools[call_id] = name
-                tool_steps += 1
-                if max_turns > 0 and tool_steps >= max_turns:
-                    logger.debug("Cursor run capped at max_turns={max}", max=max_turns)
-                    await run.cancel()
-                    cancelled_for_cap = True
-                    break
             elif status in {"completed", "error"}:
                 pending_tools.pop(call_id, None)
                 _log_tool_result(
@@ -223,12 +215,6 @@ async def _collect_run_result(run: Any, *, max_turns: int) -> TurnResult:
             call_id=call_id or "(unknown)",
         )
 
-    if cancelled_for_cap:
-        num_turns = max(tool_steps, 1)
-        if max_turns > 0:
-            num_turns = min(num_turns, max_turns)
-        return TurnResult(text=last_text, num_turns=num_turns)
-
     wait_result = await run.wait()
     wait_text = _extract_run_text(wait_result)
     if len(wait_text) > len(last_text):
@@ -236,9 +222,7 @@ async def _collect_run_result(run: Any, *, max_turns: int) -> TurnResult:
     elif not last_text:
         last_text = wait_text
 
-    num_turns = max(getattr(wait_result, "num_turns", 0) or 0, tool_steps, 1)
-    if max_turns > 0:
-        num_turns = min(num_turns, max_turns)
+    num_turns = max(getattr(wait_result, "num_turns", 0) or 0, 1)
     return TurnResult(text=last_text, num_turns=num_turns)
 
 
@@ -409,7 +393,7 @@ class CursorAgentBackend:
                     message,
                     SendOptions(mcp_servers=mcp_servers),
                 )
-                result = await _collect_run_result(run, max_turns=max_turns)
+                result = await _collect_run_result(run)
             finally:
                 await agent.close()
 

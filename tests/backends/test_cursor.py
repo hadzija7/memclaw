@@ -169,7 +169,7 @@ class TestCollectRunResult:
             ),
         )
 
-        result = await _collect_run_result(mock_run, max_turns=10)
+        result = await _collect_run_result(mock_run)
         assert "motivational video" in result.text
         assert result.text != "you."
 
