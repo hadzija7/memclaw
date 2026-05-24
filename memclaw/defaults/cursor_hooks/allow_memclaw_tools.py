@@ -179,8 +179,10 @@ def _mcp_provider(tool_name: str, tool_input: dict) -> str | None:
 def _is_allowed_mcp_bridge(tool_name: str, tool_input: dict) -> bool:
     """Return True when an MCP bridge call targets Memclaw."""
     provider = _mcp_provider(tool_name, tool_input)
+    if provider == ALLOWED_MCP_PROVIDER:
+        return _memclaw_tool_from_mcp_input(tool_input) is not None
     if provider is not None:
-        return provider == ALLOWED_MCP_PROVIDER
+        return False
     return _memclaw_tool_from_mcp_input(tool_input) is not None
 
 
@@ -194,10 +196,6 @@ def is_allowed_tool(tool_name: str, tool_input: dict | None = None) -> bool:
 
     if _is_builtin_tool(tool_name):
         return False
-
-    provider = _mcp_provider(tool_name, tool_input)
-    if provider == ALLOWED_MCP_PROVIDER:
-        return True
 
     if tool_name.lower() == "mcp":
         return _is_allowed_mcp_bridge(tool_name, tool_input)

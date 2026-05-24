@@ -36,7 +36,7 @@ class TestHookPolicy:
         ("tool_name", "tool_input", "expected"),
         [
             ("mcp", {"providerIdentifier": "memclaw", "toolName": "memory_save"}, True),
-            ("mcp", {"providerIdentifier": "memclaw", "toolName": "mcp_auth"}, True),
+            ("mcp", {"providerIdentifier": "memclaw", "toolName": "mcp_auth"}, False),
             (
                 "mcp",
                 {"toolName": "memory_save", "args": {"content": "hello"}},
