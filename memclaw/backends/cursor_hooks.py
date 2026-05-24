@@ -6,11 +6,12 @@ import importlib.resources
 import json
 import re
 import shutil
+import sys
 from pathlib import Path
 
 from .mcp_tools import MCP_SERVER_NAME
 
-HOOKS_VERSION = 1
+HOOKS_VERSION = 7
 _HOOKS_JSON = "hooks.json"
 _HOOK_SCRIPT = "allow_memclaw_tools.py"
 _VERSION_MARKER = re.compile(r"memclaw-hooks-version:\s*(\d+)")
@@ -41,6 +42,34 @@ def _installed_hook_version(script_path: Path) -> int | None:
     return int(match.group(1))
 
 
+def _write_hooks_json(memory_dir: Path, script_path: Path) -> None:
+    """Write hooks.json with an absolute command path for reliable execution."""
+    command = f"{sys.executable} {script_path}"
+    hook_entry = {"command": command, "failClosed": True}
+    # Match built-in Cursor tools explicitly so preToolUse fires even when the
+    # bridge uses tool names that skip the generic hook path.
+    builtin_matcher = (
+        "Glob|Grep|Read|Write|Edit|Shell|Task|Delete|NotebookEdit|"
+        "WebFetch|WebSearch|TodoWrite|Bash|ApplyPatch|ListDir"
+    )
+    config = {
+        "version": 1,
+        "hooks": {
+            "preToolUse": [
+                {"command": command, "matcher": builtin_matcher, "failClosed": True},
+                hook_entry,
+            ],
+            "beforeMCPExecution": [hook_entry],
+            "beforeReadFile": [hook_entry],
+            "beforeShellExecution": [hook_entry],
+        },
+    }
+    cursor_hooks_json_path(memory_dir).write_text(
+        json.dumps(config, indent=2) + "\n",
+        encoding="utf-8",
+    )
+
+
 def cursor_hooks_installed(memory_dir: Path) -> bool:
     """Return True when Memclaw's Cursor preToolUse hook is present and current."""
     hooks_json = cursor_hooks_json_path(memory_dir)
@@ -57,13 +86,13 @@ def ensure_cursor_hooks(memory_dir: Path) -> bool:
     """
     memory_dir = Path(memory_dir)
     packaged = _packaged_defaults()
-    target_dir = cursor_hooks_dir(memory_dir)
-    target_hooks = target_dir / "hooks"
+    target_hooks = cursor_hooks_dir(memory_dir) / "hooks"
     target_hooks.mkdir(parents=True, exist_ok=True)
 
-    shutil.copy2(packaged / _HOOKS_JSON, cursor_hooks_json_path(memory_dir))
-    shutil.copy2(packaged / _HOOK_SCRIPT, cursor_hook_script_path(memory_dir))
-    cursor_hook_script_path(memory_dir).chmod(0o755)
+    script_path = cursor_hook_script_path(memory_dir)
+    shutil.copy2(packaged / _HOOK_SCRIPT, script_path)
+    script_path.chmod(0o755)
+    _write_hooks_json(memory_dir, script_path.resolve())
 
     return cursor_hooks_installed(memory_dir)
 
@@ -81,10 +110,12 @@ def cursor_hooks_status(memory_dir: Path) -> str:
         config = json.loads(hooks_json.read_text(encoding="utf-8"))
     except json.JSONDecodeError:
         return "invalid hooks.json"
-    entries = config.get("hooks", {}).get("preToolUse", [])
-    if not entries:
-        return "preToolUse hook not configured"
-    command = entries[0].get("command", "")
-    if _HOOK_SCRIPT not in command:
-        return "preToolUse hook points elsewhere"
-    return f"ready (memclaw MCP provider={MCP_SERVER_NAME!r})"
+    for hook_name in ("preToolUse", "beforeMCPExecution", "beforeReadFile", "beforeShellExecution"):
+        entries = config.get("hooks", {}).get(hook_name, [])
+        if not entries:
+            return f"{hook_name} hook not configured"
+        for entry in entries:
+            command = entry.get("command", "")
+            if str(script_path.resolve()) not in command and _HOOK_SCRIPT not in command:
+                return f"{hook_name} hook points elsewhere"
+    return f"ready (memclaw MCP provider={MCP_SERVER_NAME!r}, setting_sources=project)"

@@ -311,6 +311,8 @@ Set `AGENT_BACKEND=cursor` to use the [Cursor Python SDK](https://pypi.org/proje
 
 Memclaw tools (`memory_save`, reminders, etc.) are exposed to the Cursor agent via a long-lived local HTTP MCP server on `127.0.0.1`, started and stopped with Memclaw. The port defaults to **17373** (`MEMCLAW_MCP_PORT`), matching the Claude backend's tool surface.
 
+Built-in Cursor tools are blocked via project hooks installed at `~/.memclaw/.cursor/hooks.json` (loaded with `setting_sources=["project"]`). Restart Memclaw or run `memclaw configure` after upgrading to refresh hooks if built-in tools still appear.
+
 ### Environment variables
 
 | Variable | Required | Description |

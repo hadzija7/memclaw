@@ -3,7 +3,7 @@
   "hooks": {
     "preToolUse": [
       {
-        "command": "python3 ./hooks/allow_memclaw_tools.py",
+        "command": "python3 .cursor/hooks/allow_memclaw_tools.py",
         "failClosed": true
       }
     ]

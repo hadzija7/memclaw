@@ -78,6 +78,16 @@ def _extract_run_text(result: Any) -> str:
     return ""
 
 
+def _local_agent_options(*, cwd: str) -> Any:
+    from cursor_sdk import LocalAgentOptions
+
+    return LocalAgentOptions(
+        cwd=cwd,
+        # Load ~/.memclaw/.cursor/hooks.json (project hooks for this cwd).
+        setting_sources=["project"],
+    )
+
+
 def _agent_options(
     *,
     api_key: str,
@@ -85,31 +95,69 @@ def _agent_options(
     model: str,
     mcp_servers: dict[str, Any] | None = None,
 ) -> Any:
-    from cursor_sdk import AgentOptions, LocalAgentOptions
+    from cursor_sdk import AgentOptions
 
     return AgentOptions(
         api_key=api_key,
         model=model,
-        local=LocalAgentOptions(cwd=cwd),
+        local=_local_agent_options(cwd=cwd),
         mcp_servers=mcp_servers,
     )
 
 
+def _normalize_tool_call(name: str, args: Any) -> tuple[str, Any]:
+    """Map Cursor SDK MCP wrapper calls to Memclaw tool names for logging."""
+    if isinstance(args, dict):
+        if name.lower() == "mcp":
+            inner_name = args.get("toolName") or args.get("tool_name")
+            if inner_name:
+                inner_args = args.get("args", args)
+                return str(inner_name), inner_args
+    prefix = f"{MCP_SERVER_NAME}_"
+    if name.startswith(prefix):
+        return name[len(prefix) :], args
+    return name, args
+
+
 def _log_tool_call(name: str, args: Any) -> None:
-    if args is None:
+    tool_name, tool_args = _normalize_tool_call(name, args)
+    if tool_args is None:
         args_str = "{}"
     else:
         try:
-            args_str = json.dumps(args, ensure_ascii=False)
+            args_str = json.dumps(tool_args, ensure_ascii=False)
         except (TypeError, ValueError):
-            args_str = str(args)
+            args_str = str(tool_args)
     if len(args_str) > 300:
         args_str = args_str[:300] + "..."
-    tool_name = name
-    prefix = f"{MCP_SERVER_NAME}_"
-    if tool_name.startswith(prefix):
-        tool_name = tool_name[len(prefix) :]
     logger.info("Tool call: {name}({args})", name=tool_name, args=args_str)
+
+
+def _log_tool_result(name: str, args: Any, *, status: str, result: Any) -> None:
+    tool_name, _ = _normalize_tool_call(name, args)
+    if result is None:
+        result_str = ""
+    elif isinstance(result, str):
+        result_str = result
+    else:
+        try:
+            result_str = json.dumps(result, ensure_ascii=False)
+        except (TypeError, ValueError):
+            result_str = str(result)
+    if len(result_str) > 300:
+        result_str = result_str[:300] + "..."
+    if status == "error":
+        logger.warning(
+            "Tool {name} failed: {result}",
+            name=tool_name,
+            result=result_str or "(no details)",
+        )
+    else:
+        logger.info(
+            "Tool {name} completed: {result}",
+            name=tool_name,
+            result=result_str or "(ok)",
+        )
 
 
 def _assistant_message_text(message: Any) -> str:
@@ -129,6 +177,7 @@ async def _collect_run_result(run: Any, *, max_turns: int) -> TurnResult:
     last_text = ""
     tool_steps = 0
     cancelled_for_cap = False
+    pending_tools: dict[str, str] = {}
 
     async for message in run.messages():
         msg_type = getattr(message, "type", None)
@@ -136,14 +185,43 @@ async def _collect_run_result(run: Any, *, max_turns: int) -> TurnResult:
             turn_text = _assistant_message_text(message)
             if turn_text:
                 last_text = turn_text
-        elif msg_type == "tool_call" and getattr(message, "status", "") == "running":
-            _log_tool_call(getattr(message, "name", ""), getattr(message, "args", None))
-            tool_steps += 1
-            if max_turns > 0 and tool_steps >= max_turns:
-                logger.debug("Cursor run capped at max_turns={max}", max=max_turns)
-                await run.cancel()
-                cancelled_for_cap = True
-                break
+        elif msg_type == "tool_call":
+            status = str(getattr(message, "status", ""))
+            name = getattr(message, "name", "")
+            args = getattr(message, "args", None)
+            call_id = str(getattr(message, "call_id", "") or name)
+            if status == "running":
+                _log_tool_call(name, args)
+                pending_tools[call_id] = name
+                tool_steps += 1
+                if max_turns > 0 and tool_steps >= max_turns:
+                    logger.debug("Cursor run capped at max_turns={max}", max=max_turns)
+                    await run.cancel()
+                    cancelled_for_cap = True
+                    break
+            elif status in {"completed", "error"}:
+                pending_tools.pop(call_id, None)
+                _log_tool_result(
+                    name,
+                    args,
+                    status=status,
+                    result=getattr(message, "result", None),
+                )
+            elif status:
+                logger.warning(
+                    "Tool {name} unexpected status {status!r}",
+                    name=_normalize_tool_call(name, args)[0],
+                    status=status,
+                )
+
+    for call_id, name in pending_tools.items():
+        tool_name, _ = _normalize_tool_call(name, {})
+        logger.warning(
+            "Tool {name} started but never completed (call_id={call_id}). "
+            "It may have been blocked by a Cursor hook or failed before MCP execution.",
+            name=tool_name,
+            call_id=call_id or "(unknown)",
+        )
 
     if cancelled_for_cap:
         num_turns = max(tool_steps, 1)
@@ -181,6 +259,8 @@ class CursorAgentBackend:
 
     def _ensure_tool_hooks(self) -> None:
         if ensure_cursor_hooks(self.config.memory_dir):
+            status = cursor_hooks_status(self.config.memory_dir)
+            logger.info("Cursor tool-restriction hooks: {status}", status=status)
             return
         status = cursor_hooks_status(self.config.memory_dir)
         logger.warning(
@@ -200,6 +280,7 @@ class CursorAgentBackend:
             "(Cursor Dashboard → Integrations, or a team service account key).\n"
             "Optional: CURSOR_MODEL (default: composer-2.5).\n"
             "Optional: MEMCLAW_MCP_PORT (default: 17373) for the local MCP HTTP server.\n"
+            "Project hooks under ~/.memclaw/.cursor/ restrict the agent to Memclaw MCP tools.\n"
             "Set AGENT_BACKEND=cursor in ~/.memclaw/.env to use this backend.\n"
             "Memclaw installs ~/.memclaw/.cursor/hooks.json to block built-in "
             "Cursor tools and allow only Memclaw MCP tools."

@@ -36,6 +36,9 @@ def build_memclaw_mcp_server(executor: "ToolExecutor") -> Server:
     async def call_tool(name: str, arguments: dict[str, Any]) -> CallToolResult:
         if name not in tool_names:
             raise ValueError(f"Tool {name!r} not found")
+        from loguru import logger
+
+        logger.info("MCP call: {name}({args})", name=name, args=arguments)
         text = await executor.execute(name, arguments or {})
         return CallToolResult(content=[TextContent(type="text", text=text)])
 

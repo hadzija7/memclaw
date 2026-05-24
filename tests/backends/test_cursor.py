@@ -12,10 +12,12 @@ from cursor_sdk import HttpMcpServerConfig
 from memclaw.backends import REGISTRY, get_backend_class
 from memclaw.backends.cursor import (
     CursorAgentBackend,
+    _agent_options,
     _assistant_message_text,
     _build_combined_prompt,
     _build_user_message,
     _collect_run_result,
+    _normalize_tool_call,
 )
 from memclaw.backends.mcp_bridge import HttpMcpServer
 from memclaw.backends.cursor_hooks import cursor_hooks_installed
@@ -87,6 +89,31 @@ class TestCursorAgentBackendConfig:
 
 
 class TestPromptBuilding:
+    def test_agent_options_loads_project_setting_sources(self):
+        options = _agent_options(
+            api_key="test",
+            cwd="/tmp/memclaw",
+            model="composer-2.5",
+        )
+        assert options.local.setting_sources == ["project"]
+
+    def test_normalize_tool_call_unwraps_mcp_wrapper(self):
+        name, args = _normalize_tool_call(
+            "mcp",
+            {
+                "providerIdentifier": "memclaw",
+                "toolName": "memory_save",
+                "args": {"content": "hello"},
+            },
+        )
+        assert name == "memory_save"
+        assert args == {"content": "hello"}
+
+    def test_normalize_tool_call_strips_memclaw_prefix(self):
+        name, args = _normalize_tool_call("memclaw_file_write", {"file_path": "x.md"})
+        assert name == "file_write"
+        assert args == {"file_path": "x.md"}
+
     def test_combined_prompt_includes_system_and_user(self):
         prompt = _build_combined_prompt(
             system_prompt="You are Memclaw.",
