@@ -50,6 +50,12 @@ class FakeBackend:
     one_shot_calls: list[dict[str, Any]] = field(default_factory=list)
     turn_calls: list[dict[str, Any]] = field(default_factory=list)
 
+    async def on_agent_start(self, tool_executor) -> None:
+        pass
+
+    async def on_agent_shutdown(self) -> None:
+        pass
+
     async def run_one_shot(self, *, system_prompt: str, user_message: str) -> str:
         self.one_shot_calls.append({"system": system_prompt, "user": user_message})
         return self.one_shot_response

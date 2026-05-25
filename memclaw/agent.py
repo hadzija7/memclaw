@@ -138,17 +138,25 @@ class MemclawAgent:
     def record_reminder_fired(self, text: str):
         """Append a delivered reminder to history so the agent has context
         if the user replies to it."""
-        self._history.append({
-            "role": "assistant",
-            "content": f"[Reminder fired] {text}",
-            "timestamp": datetime.now().isoformat(),
-        })
+        self._history.append(
+            {
+                "role": "assistant",
+                "content": f"[Reminder fired] {text}",
+                "timestamp": datetime.now().isoformat(),
+            }
+        )
         max_entries = self.config.conversation_history_limit * 2
         if len(self._history) > max_entries:
             self._history = self._history[-max_entries:]
 
     async def start(self):
         await self.index.sync()
+        await self.backend.on_agent_start(self._tools)
+
+    async def aclose(self):
+        """Async shutdown: release backend resources then sync cleanup."""
+        await self.backend.on_agent_shutdown()
+        self._close_sync_only()
 
     async def start_background_sync(self, interval: int = 60):
         index = self.index
@@ -297,11 +305,13 @@ class MemclawAgent:
             logger.warning("Consolidation check failed: {exc}", exc=exc)
 
         history_content = "[User sent a photo]" if image_b64 else message
-        self._history.append({
-            "role": "user",
-            "content": history_content,
-            "timestamp": datetime.now().isoformat(),
-        })
+        self._history.append(
+            {
+                "role": "user",
+                "content": history_content,
+                "timestamp": datetime.now().isoformat(),
+            }
+        )
 
         context = await self.build_context(message)
 
@@ -343,22 +353,28 @@ class MemclawAgent:
         if self.backend.bills_per_token and result.cost_usd is not None:
             logger.info(
                 "Agent done: {turns} turns, {ms}ms, cost ${cost:.4f} ({tokens})",
-                turns=result.num_turns or 1, ms=elapsed_ms,
-                cost=result.cost_usd, tokens=token_summary,
+                turns=result.num_turns or 1,
+                ms=elapsed_ms,
+                cost=result.cost_usd,
+                tokens=token_summary,
             )
         else:
             # Subscription-billed backends, or backends that don't report cost.
             logger.info(
                 "Agent done: {turns} turns, {ms}ms ({tokens})",
-                turns=result.num_turns or 1, ms=elapsed_ms, tokens=token_summary,
+                turns=result.num_turns or 1,
+                ms=elapsed_ms,
+                tokens=token_summary,
             )
 
         response_text = result.text or "I couldn't generate a response."
-        self._history.append({
-            "role": "assistant",
-            "content": response_text,
-            "timestamp": datetime.now().isoformat(),
-        })
+        self._history.append(
+            {
+                "role": "assistant",
+                "content": response_text,
+                "timestamp": datetime.now().isoformat(),
+            }
+        )
 
         max_entries = self.config.conversation_history_limit * 2
         if len(self._history) > max_entries:
@@ -366,8 +382,21 @@ class MemclawAgent:
 
         return (response_text, list(self._found_images))
 
-    def close(self):
+    def _close_sync_only(self) -> None:
         task = getattr(self, "_sync_task", None)
         if task is not None and not task.done():
             task.cancel()
         self.index.close()
+
+    def close(self):
+        """Sync cleanup including backend teardown when no event loop is running.
+
+        When an asyncio loop is already running in this thread, this cannot
+        await :meth:`AgentBackend.on_agent_shutdown`; use ``await aclose()``
+        instead for full teardown (e.g. stopping the Cursor MCP HTTP server).
+        """
+        try:
+            asyncio.get_running_loop()
+        except RuntimeError:
+            asyncio.run(self.backend.on_agent_shutdown())
+        self._close_sync_only()

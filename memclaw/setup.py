@@ -181,7 +181,12 @@ def needs_setup() -> bool:
     return not ENV_FILE.exists()
 
 
-def run_setup(*, reconfigure: bool = False, channel: str | None = None) -> None:
+def run_setup(
+    *,
+    reconfigure: bool = False,
+    channel: str | None = None,
+    memory_dir: Path | str | None = None,
+) -> None:
     """Run the interactive setup wizard.
 
     Args:
@@ -224,7 +229,9 @@ def run_setup(*, reconfigure: bool = False, channel: str | None = None) -> None:
     backend_name = _select_backend(existing)
     values["AGENT_BACKEND"] = backend_name
     backend_cls = get_backend_class(backend_name)
-    backend_values, drop_keys = backend_cls.wizard_setup(console, existing)
+    backend_values, drop_keys = backend_cls.wizard_setup(
+        console, existing, memory_dir=memory_dir
+    )
     values.update(backend_values)
     for key in drop_keys:
         values.pop(key, None)

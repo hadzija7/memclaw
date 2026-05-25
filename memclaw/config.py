@@ -35,6 +35,11 @@ class MemclawConfig:
     # value resolves to the default backend at runtime.
     agent_backend: str = ""
 
+    # Cursor SDK backend settings
+    cursor_api_key: str = ""
+    cursor_model: str = ""
+    mcp_http_port: int = 17373
+
     # Conversation continuity
     conversation_history_limit: int = 10
 
@@ -60,6 +65,23 @@ class MemclawConfig:
             self.claude_code_oauth_token = os.environ.get("CLAUDE_CODE_OAUTH_TOKEN", "")
         if not self.agent_backend:
             self.agent_backend = os.environ.get("AGENT_BACKEND", "")
+        if not self.cursor_api_key:
+            self.cursor_api_key = os.environ.get("CURSOR_API_KEY", "")
+        if not self.cursor_model:
+            self.cursor_model = os.environ.get("CURSOR_MODEL", "")
+        env_mcp_port = os.environ.get("MEMCLAW_MCP_PORT", "").strip()
+        if env_mcp_port:
+            try:
+                port = int(env_mcp_port)
+            except ValueError as exc:
+                raise ValueError(
+                    f"MEMCLAW_MCP_PORT must be an integer, got {env_mcp_port!r}"
+                ) from exc
+            if not 1 <= port <= 65535:
+                raise ValueError(
+                    f"MEMCLAW_MCP_PORT must be between 1 and 65535, got {port}"
+                )
+            self.mcp_http_port = port
         if not self.telegram_bot_token:
             self.telegram_bot_token = os.environ.get("TELEGRAM_BOT_TOKEN", "")
         if not self.allowed_user_ids:

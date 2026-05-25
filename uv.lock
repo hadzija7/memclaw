@@ -1,5 +1,5 @@
 version = 1
-revision = 3
+revision = 2
 requires-python = ">=3.10"
 resolution-markers = [
     "python_full_version >= '3.14'",
@@ -509,6 +509,22 @@ wheels = [
 ]
 
 [[package]]
+name = "cursor-sdk"
+version = "0.1.4"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "httpx" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/f3/ea/a90e5f3562ad71f1942b99a4b2328c77fb1bc503e81480577f8d7316fd62/cursor_sdk-0.1.4.tar.gz", hash = "sha256:cd85d062fc7d32d7898c99bdf68def53000e726195bd259e1394a64e6cac5173", size = 1174, upload-time = "2026-05-15T20:46:08.145Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/a2/60/1a3bbf0d579ac2b8fdb05f662ffbed8cb7d36ca2e586a37cccba92e6b332/cursor_sdk-0.1.4-py3-none-macosx_11_0_arm64.whl", hash = "sha256:2d841e7c865719a82e93d29b545d1ce9ee2b01638e14cb47108c592af26f290a", size = 52580295, upload-time = "2026-05-15T20:45:52.074Z" },
+    { url = "https://files.pythonhosted.org/packages/fa/6b/bc3f228a0c2ec7147b7bc735954af4b8a8c11c79cdd929626e51f5f66ff2/cursor_sdk-0.1.4-py3-none-macosx_11_0_x86_64.whl", hash = "sha256:bd822fea41c2b5fa1cfad6e2f914c8c66695336dfa2ea51b5d1ebf00b8109150", size = 54182976, upload-time = "2026-05-15T20:45:55.765Z" },
+    { url = "https://files.pythonhosted.org/packages/7c/61/ba002dfa1ca9b406eb288abd6d8b0bf2e0749ac4cdd1908bee7c7e85345e/cursor_sdk-0.1.4-py3-none-manylinux2014_aarch64.manylinux_2_17_aarch64.whl", hash = "sha256:eba553549da651161465242e654beaea815ecdb1701c48486649e1f7305be181", size = 61206540, upload-time = "2026-05-15T20:45:59.203Z" },
+    { url = "https://files.pythonhosted.org/packages/ca/ec/9bdcf34d6bf8f2c14c7cc2d4c06b60b8d8dad44ef9d6822a63302cb5d26d/cursor_sdk-0.1.4-py3-none-manylinux2014_x86_64.manylinux_2_17_x86_64.whl", hash = "sha256:b5fdb79bd274aeeab69b18c8d7fbd151c24435f3427e49371e2bb67c32d58921", size = 61899333, upload-time = "2026-05-15T20:46:02.816Z" },
+    { url = "https://files.pythonhosted.org/packages/45/95/48416646b9a028f1108e93ddb205040d3a6f51f2a9ffac32dc238a5bf033/cursor_sdk-0.1.4-py3-none-win_amd64.whl", hash = "sha256:32296810d8617ed598c36d5f2ea2162558f145318e2199ec338f80f734840856", size = 48608611, upload-time = "2026-05-15T20:46:05.751Z" },
+]
+
+[[package]]
 name = "distro"
 version = "1.9.0"
 source = { registry = "https://pypi.org/simple" }
@@ -918,7 +934,7 @@ wheels = [
 
 [[package]]
 name = "memclaw"
-version = "1.1.2"
+version = "1.2.0"
 source = { editable = "." }
 dependencies = [
     { name = "aiohttp" },
@@ -938,7 +954,11 @@ dependencies = [
 ]
 
 [package.optional-dependencies]
+cursor = [
+    { name = "cursor-sdk" },
+]
 dev = [
+    { name = "cursor-sdk" },
     { name = "pytest" },
     { name = "pytest-asyncio" },
     { name = "ruff" },
@@ -950,6 +970,8 @@ requires-dist = [
     { name = "beautifulsoup4", specifier = ">=4.12.0" },
     { name = "claude-agent-sdk", specifier = ">=0.1.59,<0.2" },
     { name = "click", specifier = ">=8.0.0" },
+    { name = "cursor-sdk", marker = "extra == 'cursor'", specifier = ">=0.1.0" },
+    { name = "cursor-sdk", marker = "extra == 'dev'", specifier = ">=0.1.0" },
     { name = "httpx", specifier = ">=0.27.0" },
     { name = "loguru", specifier = ">=0.7.0" },
     { name = "neonize", specifier = ">=0.3.16" },
@@ -963,7 +985,7 @@ requires-dist = [
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.9.0" },
     { name = "slack-bolt", specifier = ">=1.18.0" },
 ]
-provides-extras = ["dev"]
+provides-extras = ["cursor", "dev"]
 
 [[package]]
 name = "multidict"

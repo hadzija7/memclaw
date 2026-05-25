@@ -312,6 +312,10 @@ class SlackHandlers:
         handler = AsyncSocketModeHandler(self.app, self.config.slack_app_token)
         await handler.start_async()
 
+    async def aclose(self):
+        await self.agent.aclose()
+        self.scheduler.close()
+
     def close(self):
         self.scheduler.close()
         self.agent.close()

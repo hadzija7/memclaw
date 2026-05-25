@@ -301,6 +301,18 @@ You authenticate Claude in one of two ways. The setup wizard asks you to pick:
 
 Only one of the two is set at a time — switching modes via `memclaw configure` scrubs the other.
 
+### Cursor backend
+
+Set `AGENT_BACKEND=cursor` to use the [Cursor Python SDK](https://pypi.org/project/cursor-sdk/) instead of Claude. The setup wizard shows a backend selector when both are available.
+
+- **`CURSOR_API_KEY`** (required) — from Cursor Dashboard → Integrations, or a team service account key.
+- **`CURSOR_MODEL`** (optional) — defaults to `composer-2.5`.
+- **`MEMCLAW_MCP_PORT`** (optional) — local MCP HTTP port (default `17373`).
+
+Memclaw tools (`memory_save`, reminders, etc.) are exposed to the Cursor agent via a long-lived local HTTP MCP server on `127.0.0.1`, started and stopped with Memclaw. The port defaults to **17373** (`MEMCLAW_MCP_PORT`), matching the Claude backend's tool surface.
+
+Built-in Cursor tools are blocked via project hooks installed at `~/.memclaw/.cursor/hooks.json` (loaded with `setting_sources=["project"]`). Restart Memclaw or run `memclaw configure` after upgrading to refresh hooks if built-in tools still appear.
+
 ### Environment variables
 
 | Variable | Required | Description |
@@ -308,7 +320,10 @@ Only one of the two is set at a time — switching modes via `memclaw configure`
 | `OPENAI_API_KEY` | Yes | Embeddings + image descriptions + voice transcription |
 | `CLAUDE_CODE_OAUTH_TOKEN` | One of these two | Claude subscription token from `claude setup-token` |
 | `ANTHROPIC_API_KEY` | One of these two | Anthropic API key (`sk-ant-…`), pay-as-you-go |
-| `AGENT_BACKEND` | Optional | Agent SDK to use (defaults to `claude`) |
+| `AGENT_BACKEND` | Optional | Agent SDK to use (defaults to `claude`; set to `cursor` for Cursor SDK) |
+| `CURSOR_API_KEY` | For Cursor backend | Cursor API key from Dashboard → Integrations |
+| `CURSOR_MODEL` | For Cursor backend | Cursor model name (defaults to `composer-2.5`) |
+| `MEMCLAW_MCP_PORT` | For Cursor backend | Local MCP HTTP port (defaults to `17373`) |
 | `TELEGRAM_BOT_TOKEN` | For Telegram bot | Your Telegram bot token |
 | `ALLOWED_USER_IDS` | For Telegram bot | Comma-separated Telegram user IDs |
 | `SLACK_BOT_TOKEN` | For Slack bot | Slack bot token (`xoxb-...`) |
