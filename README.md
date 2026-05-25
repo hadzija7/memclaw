@@ -51,7 +51,15 @@ pip install memclaw
 memclaw
 ```
 
-On first run, Memclaw will prompt you for your API tokens and save them to `~/.memclaw/.env`. You can update them anytime with `memclaw configure`.
+On first run, the setup wizard asks how you want to talk to Memclaw — **Telegram**, **WhatsApp**, **Slack**, or **Terminal** — and only prompts for the API tokens relevant to that choice. Saved to `~/.memclaw/.env`. From then on, running `memclaw` launches whichever front-end you picked. Run `memclaw configure` anytime to change platform or update keys.
+
+To upgrade to the latest release later:
+
+```bash
+pip install --upgrade memclaw   # or `pipx upgrade memclaw`
+```
+
+Your config and memories live in `~/.memclaw/` and are preserved across upgrades.
 
 ## Messaging Platforms
 
@@ -67,10 +75,10 @@ The Telegram bot shows a **typing indicator** while processing so you know it's 
 
 1. Create a bot via [@BotFather](https://t.me/BotFather) and copy the token.
 2. Get your Telegram user ID (e.g. via [@userinfobot](https://t.me/userinfobot)).
-3. Start the bot — on first run you'll be prompted for all keys:
+3. Run `memclaw` and pick **Telegram** in the wizard. On first run you'll be prompted for the Telegram token and allowed user IDs:
 
 ```bash
-memclaw telegram
+memclaw
 ```
 
 ### WhatsApp Bot
@@ -87,13 +95,17 @@ neonize depends on `python-magic`, which needs the `libmagic` system library:
 
 #### Setup
 
+Run `memclaw` and pick **WhatsApp** in the wizard:
+
 ```bash
-memclaw whatsapp
+memclaw
 ```
 
 On first run a QR code is printed to your terminal. On your phone: **Settings → Linked Devices → Link a Device**, and scan it. The session persists under `~/.memclaw/whatsapp/` so you only pair once.
 
 Only messages you send to yourself (via WhatsApp's "Message Yourself" chat) are processed. DMs from other people and group messages are ignored.
+
+> **Reminders caveat:** because the bot runs as you and replies in your own "Message Yourself" chat, WhatsApp doesn't push a notification when a reminder fires — the message just appears silently in the chat. Support for delivering reminders from a dedicated Memclaw phone number (so you do get a notification) is coming soon.
 
 ### Slack Bot
 
@@ -139,10 +151,10 @@ The Slack bot connects via **Socket Mode** (WebSocket) — no public URL or webh
 
 2. **Install to Workspace** and copy the **Bot Token** (`xoxb-...`).
 3. Under **Basic Information → App-Level Tokens**, generate a token with `connections:write` scope and copy it (`xapp-...`).
-4. Start the bot:
+4. Run `memclaw` and pick **Slack** in the wizard:
 
 ```bash
-memclaw slack
+memclaw
 ```
 
 You can DM the bot directly or mention it in channels (`@Memclaw save this...`). Optionally restrict it to specific channels with `SLACK_ALLOWED_CHANNELS`, or to specific users with `SLACK_ALLOWED_USERS` (find your Slack ID via **Profile → ••• → Copy member ID**).
@@ -269,7 +281,12 @@ memclaw index
 
 # Check your memory vault
 memclaw status
+
+# Verify your OpenAI key has access to every model Memclaw uses
+memclaw doctor
 ```
+
+If voice messages aren't being transcribed or link summaries come back empty, run `memclaw doctor`. It probes the three OpenAI models Memclaw depends on — `text-embedding-3-small` (search), `gpt-5-mini` (link summaries), and `whisper-1` (voice) — and tells you which ones your project has access to. The same check runs automatically at the end of the setup wizard.
 
 ### Saving Images
 
@@ -284,7 +301,7 @@ The image is described by an AI vision model and the description is stored and i
 
 ## Configuration
 
-On first run, `memclaw`, `memclaw telegram`, or `memclaw whatsapp` will launch an interactive setup wizard that saves your keys to `~/.memclaw/.env`. The wizard only prompts for keys relevant to the command you ran — run `memclaw configure` anytime to update all keys.
+On first run, `memclaw` launches an interactive setup wizard that asks which front-end platform you want to use (Telegram, WhatsApp, Slack, or Terminal), then prompts only for keys relevant to that choice and saves them to `~/.memclaw/.env`. Run `memclaw configure` anytime to switch platform or update keys — it will again only ask for keys matching the platform you pick.
 
 You can also set keys via environment variables or a `.env` in the current directory — these take the usual precedence over the saved config.
 
@@ -321,6 +338,7 @@ Built-in Cursor tools are blocked via project hooks installed at `~/.memclaw/.cu
 | `CLAUDE_CODE_OAUTH_TOKEN` | One of these two | Claude subscription token from `claude setup-token` |
 | `ANTHROPIC_API_KEY` | One of these two | Anthropic API key (`sk-ant-…`), pay-as-you-go |
 | `AGENT_BACKEND` | Optional | Agent SDK to use (defaults to `claude`; set to `cursor` for Cursor SDK) |
+| `MEMCLAW_PLATFORM` | Optional | Front-end the bare `memclaw` launches: `telegram`, `whatsapp`, `slack`, or `terminal` (defaults to `terminal`) |
 | `CURSOR_API_KEY` | For Cursor backend | Cursor API key from Dashboard → Integrations |
 | `CURSOR_MODEL` | For Cursor backend | Cursor model name (defaults to `composer-2.5`) |
 | `MEMCLAW_MCP_PORT` | For Cursor backend | Local MCP HTTP port (defaults to `17373`) |

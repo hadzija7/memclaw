@@ -8,10 +8,11 @@ from rich.console import Console
 from rich.markdown import Markdown
 from rich.panel import Panel
 
+from .bot import mask_user_id
 from .config import MemclawConfig
 from .index import MemoryIndex
 from .search import HybridSearch
-from .setup import needs_setup, run_setup
+from .setup import needs_setup, print_logo, run_setup
 from .store import MemoryStore
 
 console = Console()
@@ -41,13 +42,17 @@ def _require_backend_auth(config: MemclawConfig) -> None:
     raise SystemExit(1)
 
 
-def _ensure_setup(ctx, channel: str | None = None):
-    """Run first-time setup if ~/.memclaw/.env doesn't exist, then reload config.
+def _require_openai(config: MemclawConfig) -> None:
+    if not config.openai_api_key:
+        console.print("[red]Error:[/red] OPENAI_API_KEY is not set.")
+        console.print("Run [bold]memclaw configure[/bold] to set it.")
+        raise SystemExit(1)
 
-    `channel` scopes which optional keys are prompted for (e.g. "telegram").
-    """
+
+def _ensure_setup(ctx):
+    """Run first-time setup if ~/.memclaw/.env doesn't exist, then reload config."""
     if needs_setup():
-        run_setup(channel=channel, memory_dir=ctx.obj.get("memory_dir"))
+        run_setup(memory_dir=ctx.obj.get("memory_dir"))
         # Reload .env so newly saved keys are picked up
         from dotenv import load_dotenv
 
@@ -73,18 +78,25 @@ def cli(ctx, memory_dir):
     ctx.obj["config"] = config
 
     if ctx.invoked_subcommand is None:
+        print_logo()
         _ensure_setup(ctx)
         config = ctx.obj["config"]
         _require_backend_auth(config)
-        if not config.openai_api_key:
-            console.print("[red]Error:[/red] OPENAI_API_KEY is not set.")
-            console.print("Run [bold]memclaw configure[/bold] to set it.")
-            raise SystemExit(1)
-        asyncio.run(_interactive(config))
+        _require_openai(config)
+
+        platform = config.platform or "terminal"
+        if platform == "telegram":
+            _run_telegram(config)
+        elif platform == "slack":
+            _run_slack(config)
+        elif platform == "whatsapp":
+            _run_whatsapp(config)
+        else:
+            asyncio.run(_interactive(config))
 
 
 # ------------------------------------------------------------------
-# Interactive mode
+# Interactive (terminal) mode
 # ------------------------------------------------------------------
 
 
@@ -145,6 +157,161 @@ async def _interactive(config: MemclawConfig):
     finally:
         await agent.aclose()
         console.print("\nGoodbye! Your memories are safe.")
+
+
+# ------------------------------------------------------------------
+# Bot launchers (dispatched from the bare `memclaw` command)
+# ------------------------------------------------------------------
+
+def _setup_bot_logging(log_file: Path) -> None:
+    import sys
+
+    from loguru import logger
+
+    logger.remove()
+    logger.add(
+        sys.stderr,
+        level="INFO",
+        format="<green>{time:HH:mm:ss}</green> | <level>{level:<8}</level> | <level>{message}</level>",
+    )
+    logger.add(str(log_file), rotation="10 MB", retention="7 days", level="DEBUG")
+
+
+def _run_telegram(config: MemclawConfig) -> None:
+    from loguru import logger
+    from openai import AsyncOpenAI
+    from telegram.error import NetworkError, TimedOut
+    from telegram.ext import Application, CommandHandler, MessageHandler, filters
+
+    from .bot.handlers import MessageHandlers
+
+    if not config.telegram_bot_token:
+        console.print("[red]Error:[/red] TELEGRAM_BOT_TOKEN is not set.")
+        console.print("Run [bold]memclaw configure[/bold] to set it.")
+        raise SystemExit(1)
+
+    _setup_bot_logging(config.memory_dir / "bot.log")
+
+    async def post_init(application: Application) -> None:
+        openai_client = AsyncOpenAI(api_key=config.openai_api_key)
+        handlers = MessageHandlers(config, openai_client)
+        application.bot_data["handlers"] = handlers
+
+        await handlers.agent.start()
+        await handlers.agent.start_background_sync(interval=60)
+
+        handlers.attach_bot(application.bot)
+        handlers.scheduler.start()
+
+        logger.info("Memclaw bot initialized")
+
+    async def post_shutdown(application: Application) -> None:
+        handlers = application.bot_data.get("handlers")
+        if handlers:
+            await handlers.aclose()
+            logger.info("Memclaw bot shut down cleanly")
+
+    app = (
+        Application.builder()
+        .token(config.telegram_bot_token)
+        .post_init(post_init)
+        .post_shutdown(post_shutdown)
+        .build()
+    )
+
+    async def _start(update, context):
+        await context.bot_data["handlers"].start_command(update, context)
+
+    async def _text(update, context):
+        await context.bot_data["handlers"].handle_text(update, context)
+
+    async def _photo(update, context):
+        await context.bot_data["handlers"].handle_photo(update, context)
+
+    async def _voice(update, context):
+        await context.bot_data["handlers"].handle_voice(update, context)
+
+    async def _on_error(update, context):
+        err = context.error
+        if isinstance(err, (NetworkError, TimedOut)):
+            logger.warning(f"Network blip ({type(err).__name__}): {err} — polling will retry")
+            return
+        logger.exception("Unhandled error in Telegram handler", exc_info=err)
+
+    app.add_error_handler(_on_error)
+    app.add_handler(CommandHandler("start", _start))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, _text))
+    app.add_handler(MessageHandler(filters.PHOTO, _photo))
+    app.add_handler(MessageHandler(filters.VOICE, _voice))
+
+    allowed = config.allowed_user_ids_list
+    masked = [mask_user_id(u) for u in allowed] if allowed else "all"
+    console.print(
+        f"[green]Starting Memclaw Telegram bot...[/green]  "
+        f"(allowed users: {masked})"
+    )
+    app.run_polling(allowed_updates=["message"])
+
+
+def _run_whatsapp(config: MemclawConfig) -> None:
+    from openai import AsyncOpenAI
+
+    from .bot.whatsapp_handlers import WhatsAppBot
+
+    _setup_bot_logging(config.memory_dir / "whatsapp.log")
+
+    openai_client = AsyncOpenAI(api_key=config.openai_api_key)
+    bot_ = WhatsAppBot(config, openai_client)
+
+    console.print("[green]Starting Memclaw WhatsApp bot[/green]  (self-notes only)")
+    if not config.whatsapp_session_db.exists():
+        console.print(
+            "[cyan]First run:[/cyan] a QR code will appear below. "
+            "Open WhatsApp → Settings → Linked Devices → Link a Device, and scan it."
+        )
+
+    try:
+        asyncio.run(bot_.start())
+    except KeyboardInterrupt:
+        pass
+    finally:
+        bot_.close()
+
+
+def _run_slack(config: MemclawConfig) -> None:
+    from openai import AsyncOpenAI
+
+    from .bot.slack_handlers import SlackHandlers
+
+    if not config.slack_bot_token:
+        console.print("[red]Error:[/red] SLACK_BOT_TOKEN is not set.")
+        console.print("Run [bold]memclaw configure[/bold] to set it.")
+        raise SystemExit(1)
+    if not config.slack_app_token:
+        console.print("[red]Error:[/red] SLACK_APP_TOKEN is not set.")
+        console.print("Run [bold]memclaw configure[/bold] to set it.")
+        raise SystemExit(1)
+
+    _setup_bot_logging(config.memory_dir / "slack.log")
+
+    openai_client = AsyncOpenAI(api_key=config.openai_api_key)
+    handlers = SlackHandlers(config, openai_client)
+
+    console.print(
+        f"[green]Starting Memclaw Slack bot (Socket Mode)...[/green]  "
+        f"(allowed channels: {config.slack_allowed_channels_list or 'all'})"
+    )
+
+    async def _run():
+        try:
+            await handlers.start()
+        except KeyboardInterrupt:
+            pass
+        finally:
+            await handlers.aclose()
+            console.print("\nMemclaw Slack bot shut down.")
+
+    asyncio.run(_run())
 
 
 # ------------------------------------------------------------------
@@ -216,9 +383,7 @@ def consolidate(ctx, since_date):
     config: MemclawConfig = ctx.obj["config"]
 
     _require_backend_auth(config)
-    if not config.openai_api_key:
-        console.print("[red]Error:[/red] OPENAI_API_KEY is not set.")
-        raise SystemExit(1)
+    _require_openai(config)
 
     override = None
     if since_date:
@@ -283,6 +448,7 @@ def status(ctx):
         Panel(
             f"Memory directory : {config.memory_dir}\n"
             f"Memory files     : {len(files)}\n"
+            f"Platform         : {config.platform or 'terminal'}\n"
             f"Indexed chunks   : {stats['chunks']}\n"
             f"Stored images    : {stats['images']}\n"
             f"Database         : {config.db_path}",
@@ -292,253 +458,25 @@ def status(ctx):
     )
 
 
-# ------------------------------------------------------------------
-# Telegram bot
-# ------------------------------------------------------------------
-
-
 @cli.command()
 @click.pass_context
 def configure(ctx):
-    """Update API keys and settings."""
+    """Update API keys, agent backend, and front-end platform."""
+    print_logo()
     run_setup(reconfigure=True, memory_dir=ctx.obj.get("memory_dir"))
 
 
 @cli.command()
 @click.pass_context
-def telegram(ctx):
-    """Start the Memclaw Telegram bot."""
-    import sys
+def doctor(ctx):
+    """Check that your OpenAI key can reach every model Memclaw uses."""
+    from .openai_health import print_probe_report, probe_openai
 
-    from loguru import logger
-    from openai import AsyncOpenAI
-    from telegram.error import NetworkError, TimedOut
-    from telegram.ext import Application, CommandHandler, MessageHandler, filters
-
-    from .bot.handlers import MessageHandlers
-
-    _ensure_setup(ctx, channel="telegram")
     config: MemclawConfig = ctx.obj["config"]
+    _require_openai(config)
 
-    if not config.telegram_bot_token:
-        console.print("[red]Error:[/red] TELEGRAM_BOT_TOKEN is not set.")
-        console.print("Run [bold]memclaw configure[/bold] to set it.")
+    with console.status("[cyan]Probing OpenAI...[/cyan]"):
+        report = asyncio.run(probe_openai(config.openai_api_key))
+    print_probe_report(report, console)
+    if not report.all_ok:
         raise SystemExit(1)
-
-    if not config.openai_api_key:
-        console.print("[red]Error:[/red] OPENAI_API_KEY is not set.")
-        console.print("Run [bold]memclaw configure[/bold] to set it.")
-        raise SystemExit(1)
-
-    # Logging
-    logger.remove()
-    logger.add(
-        sys.stderr,
-        level="INFO",
-        format="<green>{time:HH:mm:ss}</green> | <level>{level:<8}</level> | <level>{message}</level>",
-    )
-    logger.add(
-        str(config.memory_dir / "bot.log"),
-        rotation="10 MB",
-        retention="7 days",
-        level="DEBUG",
-    )
-
-    async def post_init(application: Application) -> None:
-        openai_client = AsyncOpenAI(api_key=config.openai_api_key)
-        handlers = MessageHandlers(config, openai_client)
-        application.bot_data["handlers"] = handlers
-
-        # Spec #9: run startup sync and start periodic background sync
-        await handlers.agent.start()
-        await handlers.agent.start_background_sync(interval=60)
-
-        handlers.attach_bot(application.bot)
-        handlers.scheduler.start()
-
-        logger.info("Memclaw bot initialized")
-
-    async def post_shutdown(application: Application) -> None:
-        handlers = application.bot_data.get("handlers")
-        if handlers:
-            await handlers.aclose()
-            logger.info("Memclaw bot shut down cleanly")
-
-    app = (
-        Application.builder()
-        .token(config.telegram_bot_token)
-        .post_init(post_init)
-        .post_shutdown(post_shutdown)
-        .build()
-    )
-
-    # Thin wrappers that delegate to the handlers instance
-    async def _start(update, context):
-        await context.bot_data["handlers"].start_command(update, context)
-
-    async def _text(update, context):
-        await context.bot_data["handlers"].handle_text(update, context)
-
-    async def _photo(update, context):
-        await context.bot_data["handlers"].handle_photo(update, context)
-
-    async def _voice(update, context):
-        await context.bot_data["handlers"].handle_voice(update, context)
-
-    async def _on_error(update, context):
-        err = context.error
-        if isinstance(err, (NetworkError, TimedOut)):
-            logger.warning(
-                f"Network blip ({type(err).__name__}): {err} — polling will retry"
-            )
-            return
-        logger.exception("Unhandled error in Telegram handler", exc_info=err)
-
-    app.add_error_handler(_on_error)
-
-    app.add_handler(CommandHandler("start", _start))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, _text))
-    app.add_handler(MessageHandler(filters.PHOTO, _photo))
-    app.add_handler(MessageHandler(filters.VOICE, _voice))
-
-    console.print(
-        f"[green]Starting Memclaw Telegram bot...[/green]  "
-        f"(allowed users: {config.allowed_user_ids_list or 'all'})"
-    )
-    app.run_polling(allowed_updates=["message"])
-
-
-# ------------------------------------------------------------------
-# WhatsApp bot (personal account via WhatsApp Web — neonize)
-# ------------------------------------------------------------------
-
-
-@cli.command()
-@click.pass_context
-def whatsapp(ctx):
-    """Start the Memclaw WhatsApp bot using your personal account.
-
-    On first run, a QR code is printed to the terminal — open WhatsApp on
-    your phone → Settings → Linked Devices → Link a Device, and scan it.
-    Session credentials are stored under ~/.memclaw/whatsapp/.
-    """
-    import sys
-
-    from loguru import logger
-    from openai import AsyncOpenAI
-
-    from .bot.whatsapp_handlers import WhatsAppBot
-
-    _ensure_setup(ctx, channel="whatsapp")
-    config: MemclawConfig = ctx.obj["config"]
-
-    if not config.openai_api_key:
-        console.print("[red]Error:[/red] OPENAI_API_KEY is not set.")
-        console.print("Run [bold]memclaw configure[/bold] to set it.")
-        raise SystemExit(1)
-
-    _require_backend_auth(config)
-
-    # Logging
-    logger.remove()
-    logger.add(
-        sys.stderr,
-        level="INFO",
-        format="<green>{time:HH:mm:ss}</green> | <level>{level:<8}</level> | <level>{message}</level>",
-    )
-    logger.add(
-        str(config.memory_dir / "whatsapp.log"),
-        rotation="10 MB",
-        retention="7 days",
-        level="DEBUG",
-    )
-
-    openai_client = AsyncOpenAI(api_key=config.openai_api_key)
-    bot_ = WhatsAppBot(config, openai_client)
-
-    console.print("[green]Starting Memclaw WhatsApp bot[/green]  (self-notes only)")
-    if not config.whatsapp_session_db.exists():
-        console.print(
-            "[cyan]First run:[/cyan] a QR code will appear below. "
-            "Open WhatsApp → Settings → Linked Devices → Link a Device, and scan it."
-        )
-
-    async def _run():
-        try:
-            await bot_.start()
-        except KeyboardInterrupt:
-            pass
-        finally:
-            await bot_.aclose()
-
-    asyncio.run(_run())
-
-
-# ------------------------------------------------------------------
-# Slack bot (Socket Mode via slack-bolt)
-# ------------------------------------------------------------------
-
-
-@cli.command()
-@click.pass_context
-def slack(ctx):
-    """Start the Memclaw Slack bot (Socket Mode)."""
-    import sys
-
-    from loguru import logger
-    from openai import AsyncOpenAI
-
-    from .bot.slack_handlers import SlackHandlers
-
-    _ensure_setup(ctx, channel="slack")
-    config: MemclawConfig = ctx.obj["config"]
-
-    if not config.slack_bot_token:
-        console.print("[red]Error:[/red] SLACK_BOT_TOKEN is not set.")
-        console.print("Run [bold]memclaw configure[/bold] to set it.")
-        raise SystemExit(1)
-
-    if not config.slack_app_token:
-        console.print("[red]Error:[/red] SLACK_APP_TOKEN is not set.")
-        console.print("Run [bold]memclaw configure[/bold] to set it.")
-        raise SystemExit(1)
-
-    if not config.openai_api_key:
-        console.print("[red]Error:[/red] OPENAI_API_KEY is not set.")
-        console.print("Run [bold]memclaw configure[/bold] to set it.")
-        raise SystemExit(1)
-
-    _require_backend_auth(config)
-
-    # Logging
-    logger.remove()
-    logger.add(
-        sys.stderr,
-        level="INFO",
-        format="<green>{time:HH:mm:ss}</green> | <level>{level:<8}</level> | <level>{message}</level>",
-    )
-    logger.add(
-        str(config.memory_dir / "slack.log"),
-        rotation="10 MB",
-        retention="7 days",
-        level="DEBUG",
-    )
-
-    openai_client = AsyncOpenAI(api_key=config.openai_api_key)
-    handlers = SlackHandlers(config, openai_client)
-
-    console.print(
-        f"[green]Starting Memclaw Slack bot (Socket Mode)...[/green]  "
-        f"(allowed channels: {config.slack_allowed_channels_list or 'all'})"
-    )
-
-    async def _run():
-        try:
-            await handlers.start()
-        except KeyboardInterrupt:
-            pass
-        finally:
-            await handlers.aclose()
-            console.print("\nMemclaw Slack bot shut down.")
-
-    asyncio.run(_run())

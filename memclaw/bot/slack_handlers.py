@@ -21,6 +21,7 @@ from slack_bolt.adapter.socket_mode.async_handler import AsyncSocketModeHandler
 from ..agent import MemclawAgent
 from ..config import MemclawConfig
 from ..reminders import ReminderScheduler
+from . import mask_user_id
 from .link_processor import LinkProcessor
 
 # Image MIME types we handle
@@ -120,7 +121,7 @@ class SlackHandlers:
     # ------------------------------------------------------------------
 
     async def _handle_text(self, user: str, channel: str, thread_ts: str, text: str, say):
-        logger.info("Slack text from {u} in {c}: {t}", u=user, c=channel, t=text[:100])
+        logger.info("Slack text from {u} in {c}: {t}", u=mask_user_id(user), c=channel, t=text[:100])
 
         prompt_parts = [text]
         links = await self.link_processor.process_links(text)
@@ -144,7 +145,7 @@ class SlackHandlers:
         file_info: dict, say, client,
     ):
         file_name = file_info.get("name", "image")
-        logger.info("Slack image from {u}: {f}, caption={c!r}", u=user, f=file_name, c=caption)
+        logger.info("Slack image from {u}: {f}, caption={c!r}", u=mask_user_id(user), f=file_name, c=caption)
 
         # Download image via Slack file URL (requires bot token for auth)
         image_bytes = await self._download_slack_file(file_info)
@@ -196,7 +197,7 @@ class SlackHandlers:
         file_info: dict, say, client,
     ):
         file_name = file_info.get("name", "audio")
-        logger.info("Slack audio from {u}: {f}", u=user, f=file_name)
+        logger.info("Slack audio from {u}: {f}", u=mask_user_id(user), f=file_name)
 
         audio_bytes = await self._download_slack_file(file_info)
         if audio_bytes is None:
@@ -206,12 +207,24 @@ class SlackHandlers:
         mime = file_info.get("mimetype", "audio/mp4")
         ext = _mime_to_ext(mime) or ".m4a"
 
-        transcription = await self.openai_client.audio.transcriptions.create(
-            model="whisper-1",
-            file=(f"audio{ext}", audio_bytes, mime),
-        )
+        try:
+            transcription = await self.openai_client.audio.transcriptions.create(
+                model="whisper-1",
+                file=(f"audio{ext}", audio_bytes, mime),
+            )
+        except Exception as exc:
+            logger.exception("Whisper transcription failed: {exc}", exc=exc)
+            await say(
+                text=(
+                    "I couldn't transcribe that voice message. "
+                    "If you set up Memclaw recently, run `memclaw doctor` to check "
+                    "your OpenAI key has access to the whisper-1 model."
+                ),
+                thread_ts=thread_ts,
+            )
+            return
         text = transcription.text
-        logger.debug("Transcribed Slack audio: {t}", t=text[:100])
+        logger.info("Transcribed Slack audio: {t}", t=text)
 
         link_info = ""
         links = await self.link_processor.process_links(text)
