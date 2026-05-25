@@ -50,6 +50,12 @@ class FakeBackend:
     one_shot_calls: list[dict[str, Any]] = field(default_factory=list)
     turn_calls: list[dict[str, Any]] = field(default_factory=list)
 
+    async def on_agent_start(self, tool_executor) -> None:
+        pass
+
+    async def on_agent_shutdown(self) -> None:
+        pass
+
     async def run_one_shot(self, *, system_prompt: str, user_message: str) -> str:
         self.one_shot_calls.append({"system": system_prompt, "user": user_message})
         return self.one_shot_response
@@ -336,6 +342,22 @@ class TestSyncOptimization:
         await agent.start()
         agent.index.sync.assert_called_once()
         agent.close()
+
+    @pytest.mark.asyncio
+    async def test_start_without_backend_skips_lifecycle(self, cfg: MemclawConfig, fake_backend: FakeBackend):
+        """start(include_backend=False) should sync without backend startup."""
+        agent = _make_agent(cfg, fake_backend)
+        agent.index.sync = AsyncMock(return_value=False)
+        fake_backend.on_agent_start = AsyncMock()
+        fake_backend.on_agent_shutdown = AsyncMock()
+
+        await agent.start(include_backend=False)
+        agent.index.sync.assert_called_once()
+        fake_backend.on_agent_start.assert_not_called()
+        assert not agent._backend_started
+
+        await agent.aclose()
+        fake_backend.on_agent_shutdown.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_background_sync_creates_task(self, cfg: MemclawConfig, fake_backend: FakeBackend):

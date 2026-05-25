@@ -132,6 +132,7 @@ class MemclawAgent:
             scheduler=scheduler,
         )
         self.backend: AgentBackend = backend or build_backend(config)
+        self._backend_started = False
 
     # ── Startup / sync ───────────────────────────────────────────────
 
@@ -147,8 +148,18 @@ class MemclawAgent:
         if len(self._history) > max_entries:
             self._history = self._history[-max_entries:]
 
-    async def start(self):
+    async def start(self, *, include_backend: bool = True):
         await self.index.sync()
+        if include_backend:
+            await self.backend.on_agent_start(self._tools)
+            self._backend_started = True
+
+    async def aclose(self):
+        """Async shutdown: release backend resources then sync cleanup."""
+        if self._backend_started:
+            await self.backend.on_agent_shutdown()
+            self._backend_started = False
+        self._close_sync_only()
 
     async def start_background_sync(self, interval: int = 60):
         index = self.index
@@ -366,8 +377,21 @@ class MemclawAgent:
 
         return (response_text, list(self._found_images))
 
-    def close(self):
+    def _close_sync_only(self) -> None:
         task = getattr(self, "_sync_task", None)
         if task is not None and not task.done():
             task.cancel()
         self.index.close()
+
+    def close(self):
+        """Sync cleanup including backend teardown when no event loop is running.
+
+        When an asyncio loop is already running in this thread, this cannot
+        await :meth:`AgentBackend.on_agent_shutdown`; use ``await aclose()``
+        instead for full teardown (e.g. stopping the Cursor MCP HTTP server).
+        """
+        try:
+            asyncio.get_running_loop()
+        except RuntimeError:
+            asyncio.run(self.backend.on_agent_shutdown())
+        self._close_sync_only()

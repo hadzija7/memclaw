@@ -14,7 +14,8 @@ should need SDK-specific imports.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, ClassVar, Protocol, runtime_checkable
+from pathlib import Path
+from typing import TYPE_CHECKING, ClassVar, Protocol, runtime_checkable
 
 if TYPE_CHECKING:
     from rich.console import Console
@@ -73,6 +74,8 @@ class AgentBackend(Protocol):
         cls,
         console: "Console",
         existing: dict[str, str],
+        *,
+        memory_dir: Path | str | None = None,
     ) -> tuple[dict[str, str], list[str]]:
         """Interactively collect this backend's env-var values.
 
@@ -83,6 +86,8 @@ class AgentBackend(Protocol):
         Args:
             console: Rich console for output / prompts.
             existing: env-var values already loaded from ``.env``.
+            memory_dir: Active Memclaw memory directory (from ``--memory-dir``),
+                or the default when omitted.
 
         Returns:
             A `(values, drop_keys)` pair.
@@ -93,6 +98,18 @@ class AgentBackend(Protocol):
               (used to scrub credentials from a previously-selected backend
               so they can't shadow the new choice).
         """
+        ...
+
+    # Lifecycle (optional no-ops for backends without extra setup) ---------
+    async def on_agent_start(self, tool_executor: "ToolExecutor") -> None:
+        """Called once when MemclawAgent starts (after index sync).
+
+        Backends use this for process-scoped resources (e.g. a local MCP server).
+        """
+        ...
+
+    async def on_agent_shutdown(self) -> None:
+        """Called when MemclawAgent shuts down asynchronously."""
         ...
 
     # Runtime --------------------------------------------------------------
@@ -118,9 +135,12 @@ class AgentBackend(Protocol):
         """Run one full agentic turn with tool access.
 
         The backend is responsible for translating ``TOOL_DEFINITIONS``
-        into its SDK's tool format, routing tool calls back through
-        ``tool_executor.execute(name, args)``, and capping iterations
-        at ``max_turns``.
+        into its SDK's tool format and routing tool calls back through
+        ``tool_executor.execute(name, args)``.
+
+        ``max_turns`` is passed to SDKs that support it (e.g. Claude).
+        Backends without a native cap should log when reported turns exceed
+        this limit after the run completes.
         """
         ...
 

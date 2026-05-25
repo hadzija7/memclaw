@@ -52,7 +52,7 @@ def _require_openai(config: MemclawConfig) -> None:
 def _ensure_setup(ctx):
     """Run first-time setup if ~/.memclaw/.env doesn't exist, then reload config."""
     if needs_setup():
-        run_setup()
+        run_setup(memory_dir=ctx.obj.get("memory_dir"))
         # Reload .env so newly saved keys are picked up
         from dotenv import load_dotenv
         load_dotenv(Path.home() / ".memclaw" / ".env", override=True)
@@ -153,7 +153,7 @@ async def _interactive(config: MemclawConfig):
                 console.print(Markdown(response))
             console.print()
     finally:
-        agent.close()
+        await agent.aclose()
         console.print("\nGoodbye! Your memories are safe.")
 
 
@@ -206,7 +206,7 @@ def _run_telegram(config: MemclawConfig) -> None:
     async def post_shutdown(application: Application) -> None:
         handlers = application.bot_data.get("handlers")
         if handlers:
-            handlers.close()
+            await handlers.aclose()
             logger.info("Memclaw bot shut down cleanly")
 
     app = (
@@ -306,7 +306,7 @@ def _run_slack(config: MemclawConfig) -> None:
         except KeyboardInterrupt:
             pass
         finally:
-            handlers.close()
+            await handlers.aclose()
             console.print("\nMemclaw Slack bot shut down.")
 
     asyncio.run(_run())
@@ -386,6 +386,8 @@ def consolidate(ctx, since_date):
     async def _run():
         agent = MemclawAgent(config)
         try:
+            with console.status("[cyan]Syncing index...[/cyan]"):
+                await agent.start(include_backend=False)
             with console.status("[cyan]Running consolidation...[/cyan]"):
                 result = await agent._maybe_consolidate(
                     force=True, consolidated_through_override=override
@@ -395,7 +397,7 @@ def consolidate(ctx, since_date):
             else:
                 console.print("[yellow]No daily files to consolidate.[/yellow]")
         finally:
-            agent.close()
+            await agent.aclose()
 
     asyncio.run(_run())
 
@@ -447,7 +449,7 @@ def status(ctx):
 def configure(ctx):
     """Update API keys, agent backend, and front-end platform."""
     print_logo()
-    run_setup(reconfigure=True)
+    run_setup(reconfigure=True, memory_dir=ctx.obj.get("memory_dir"))
 
 
 @cli.command()

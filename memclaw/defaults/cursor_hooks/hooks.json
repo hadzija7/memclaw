@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "hooks": {
+    "preToolUse": [
+      {
+        "command": "python3 .cursor/hooks/allow_memclaw_tools.py",
+        "failClosed": true
+      }
+    ]
+  }
+}

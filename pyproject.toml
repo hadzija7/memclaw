@@ -49,10 +49,14 @@ Repository = "https://github.com/emanuilo/memclaw"
 Issues = "https://github.com/emanuilo/memclaw/issues"
 
 [project.optional-dependencies]
+cursor = [
+    "cursor-sdk>=0.1.0",
+]
 dev = [
     "pytest>=9.0.0",
     "pytest-asyncio>=1.0.0",
     "ruff>=0.9.0",
+    "cursor-sdk>=0.1.0",
 ]
 
 [tool.hatch.build.targets.wheel]

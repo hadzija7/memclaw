@@ -1,0 +1,45 @@
+{
+  "hooks_version": 9,
+  "mcp_http_port": 17373,
+  "allowed_mcp_provider": "memclaw",
+  "memclaw_tool_names": [
+    "file_read",
+    "file_write",
+    "image_save",
+    "image_search",
+    "memory_save",
+    "memory_search",
+    "reminder_cancel",
+    "reminder_create",
+    "reminder_list",
+    "update_instructions"
+  ],
+  "cursor_builtin_tool_names": [
+    "apply_patch",
+    "applypatch",
+    "bash",
+    "bashoutput",
+    "delete",
+    "edit",
+    "exitplanmode",
+    "glob",
+    "grep",
+    "killbash",
+    "list_dir",
+    "listdir",
+    "notebookedit",
+    "read",
+    "search",
+    "shell",
+    "slashcommand",
+    "task",
+    "todowrite",
+    "webfetch",
+    "websearch",
+    "write"
+  ],
+  "call_mcp_bridge_tool_names": [
+    "call_mcp_tool",
+    "callmcptool"
+  ]
+}

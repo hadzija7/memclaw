@@ -238,6 +238,10 @@ class MessageHandlers:
         )
         await self._send_with_typing(update, context, prompt)
 
+    async def aclose(self):
+        await self.agent.aclose()
+        self.scheduler.close()
+
     def close(self):
         self.scheduler.close()
         self.agent.close()
