@@ -3,7 +3,7 @@
 
 Installed to ~/.memclaw/.cursor/hooks/ by the Cursor backend.
 Handles preToolUse, beforeMCPExecution, beforeReadFile, and beforeShellExecution.
-memclaw-hooks-version: 8
+memclaw-hooks-version: 9
 
 Tool allowlists are loaded from hook_policy.json (written on install from
 memclaw.backends.tool_policy).
@@ -75,6 +75,23 @@ def _is_builtin_tool(tool_name: str) -> bool:
     return False
 
 
+def _expected_mcp_port() -> int:
+    """Port Memclaw's HTTP MCP server uses (policy, then env, then default)."""
+    raw = _POLICY.get("mcp_http_port")
+    if raw is not None:
+        try:
+            return int(raw)
+        except (TypeError, ValueError):
+            pass
+    env = os.environ.get("MEMCLAW_MCP_PORT", "").strip()
+    if env:
+        try:
+            return int(env)
+        except ValueError:
+            pass
+    return 17373
+
+
 def _is_local_memclaw_mcp_url(url: str) -> bool:
     """Return True when *url* points at Memclaw's local HTTP MCP server."""
     try:
@@ -85,6 +102,11 @@ def _is_local_memclaw_mcp_url(url: str) -> bool:
         return False
     host = (parsed.hostname or "").lower()
     if host not in {"127.0.0.1", "localhost", "::1"}:
+        return False
+    url_port = parsed.port
+    if url_port is None:
+        url_port = 80
+    if url_port != _expected_mcp_port():
         return False
     path = (parsed.path or "").rstrip("/")
     return path in {"", "/mcp"} or path.startswith("/mcp/")

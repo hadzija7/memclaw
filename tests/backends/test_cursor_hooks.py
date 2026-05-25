@@ -57,7 +57,11 @@ class TestHookPolicy:
             ("file_read", {"file_path": "notes.md"}, True),
             (
                 "CallMcpTool",
-                {"server": "memclaw", "toolName": "memory_save", "args": {"content": "hello"}},
+                {
+                    "server": "memclaw",
+                    "toolName": "memory_save",
+                    "args": {"content": "hello"},
+                },
                 True,
             ),
             (
@@ -76,7 +80,11 @@ class TestHookPolicy:
                 False,
             ),
             ("Glob", {"globPattern": "**/*"}, False),
-            ("glob", {"globPattern": "**/*", "targetDirectory": "/Users/x/.memclaw"}, False),
+            (
+                "glob",
+                {"globPattern": "**/*", "targetDirectory": "/Users/x/.memclaw"},
+                False,
+            ),
             ("Read", {"path": "/tmp/x"}, False),
             ("read", {"path": "/tmp/x"}, False),
             ("Grep", {"pattern": "foo"}, False),
@@ -145,6 +153,14 @@ class TestHookPolicy:
                 {
                     "hook_event_name": "beforeMCPExecution",
                     "tool_name": "memory_save",
+                    "url": "http://127.0.0.1:17374/mcp",
+                },
+                False,
+            ),
+            (
+                {
+                    "hook_event_name": "beforeMCPExecution",
+                    "tool_name": "memory_save",
                     "url": "https://example.com/mcp",
                 },
                 False,
@@ -190,48 +206,119 @@ class TestHookPolicy:
             )
             return json.loads(proc.stdout)
 
-        assert run({"tool_name": "Read", "tool_input": {"path": "/etc/passwd"}, "hook_event_name": "preToolUse"})["permission"] == "deny"
-        assert run({"tool_name": "glob", "tool_input": {"globPattern": "**/*"}, "hook_event_name": "preToolUse"})["permission"] == "deny"
-        assert run({
-            "tool_name": "mcp",
-            "tool_input": {"providerIdentifier": "memclaw", "toolName": "memory_save", "args": {"content": "hello"}},
-            "hook_event_name": "preToolUse",
-        })["permission"] == "allow"
-        assert run({
-            "tool_name": "mcp",
-            "tool_input": {"toolName": "memory_save", "args": {"content": "hello"}},
-            "hook_event_name": "preToolUse",
-        })["permission"] == "allow"
-        assert run({
-            "hook_event_name": "beforeMCPExecution",
-            "tool_name": "memory_save",
-            "tool_input": '{"content": "hello"}',
-            "url": "http://127.0.0.1:17373/mcp",
-        })["permission"] == "allow"
-        assert run({
-            "tool_name": "CallMcpTool",
-            "tool_input": {"server": "memclaw", "toolName": "memory_save", "args": {"content": "hello"}},
-            "hook_event_name": "preToolUse",
-        })["permission"] == "allow"
-        assert run({
-            "tool_name": "CallMcpTool",
-            "tool_input": {"server": "other", "toolName": "memory_save"},
-            "hook_event_name": "preToolUse",
-        })["permission"] == "deny"
-        assert run({
-            "tool_name": "MCP:memory_save",
-            "tool_input": {
-                "content": "AI video list",
-                "permanent": True,
-                "entry_type": "link",
-                "tags": ["ai"],
-            },
-            "hook_event_name": "preToolUse",
-        })["permission"] == "allow"
-        assert run({"hook_event_name": "beforeReadFile", "file_path": "/tmp/x"})["permission"] == "deny"
-        assert run({"hook_event_name": "beforeShellExecution", "command": "ls"})["permission"] == "deny"
+        assert (
+            run(
+                {
+                    "tool_name": "Read",
+                    "tool_input": {"path": "/etc/passwd"},
+                    "hook_event_name": "preToolUse",
+                }
+            )["permission"]
+            == "deny"
+        )
+        assert (
+            run(
+                {
+                    "tool_name": "glob",
+                    "tool_input": {"globPattern": "**/*"},
+                    "hook_event_name": "preToolUse",
+                }
+            )["permission"]
+            == "deny"
+        )
+        assert (
+            run(
+                {
+                    "tool_name": "mcp",
+                    "tool_input": {
+                        "providerIdentifier": "memclaw",
+                        "toolName": "memory_save",
+                        "args": {"content": "hello"},
+                    },
+                    "hook_event_name": "preToolUse",
+                }
+            )["permission"]
+            == "allow"
+        )
+        assert (
+            run(
+                {
+                    "tool_name": "mcp",
+                    "tool_input": {
+                        "toolName": "memory_save",
+                        "args": {"content": "hello"},
+                    },
+                    "hook_event_name": "preToolUse",
+                }
+            )["permission"]
+            == "allow"
+        )
+        assert (
+            run(
+                {
+                    "hook_event_name": "beforeMCPExecution",
+                    "tool_name": "memory_save",
+                    "tool_input": '{"content": "hello"}',
+                    "url": "http://127.0.0.1:17373/mcp",
+                }
+            )["permission"]
+            == "allow"
+        )
+        assert (
+            run(
+                {
+                    "tool_name": "CallMcpTool",
+                    "tool_input": {
+                        "server": "memclaw",
+                        "toolName": "memory_save",
+                        "args": {"content": "hello"},
+                    },
+                    "hook_event_name": "preToolUse",
+                }
+            )["permission"]
+            == "allow"
+        )
+        assert (
+            run(
+                {
+                    "tool_name": "CallMcpTool",
+                    "tool_input": {"server": "other", "toolName": "memory_save"},
+                    "hook_event_name": "preToolUse",
+                }
+            )["permission"]
+            == "deny"
+        )
+        assert (
+            run(
+                {
+                    "tool_name": "MCP:memory_save",
+                    "tool_input": {
+                        "content": "AI video list",
+                        "permanent": True,
+                        "entry_type": "link",
+                        "tags": ["ai"],
+                    },
+                    "hook_event_name": "preToolUse",
+                }
+            )["permission"]
+            == "allow"
+        )
+        assert (
+            run({"hook_event_name": "beforeReadFile", "file_path": "/tmp/x"})[
+                "permission"
+            ]
+            == "deny"
+        )
+        assert (
+            run({"hook_event_name": "beforeShellExecution", "command": "ls"})[
+                "permission"
+            ]
+            == "deny"
+        )
 
-    def test_audit_deny_writes_to_hook_install_memory_dir(self, tmp_path: Path, monkeypatch):
+    def test_audit_deny_writes_to_hook_install_memory_dir(
+        self, tmp_path: Path, monkeypatch
+    ):
         ensure_cursor_hooks(tmp_path)
         script = cursor_hook_script_path(tmp_path)
         monkeypatch.delenv("MEMCLAW_MEMORY_DIR", raising=False)
@@ -273,7 +360,12 @@ class TestHookInstallation:
         pre_tool_use = data["hooks"]["preToolUse"]
         assert len(pre_tool_use) == 2
         assert pre_tool_use[0].get("matcher")
-        for hook_name in ("preToolUse", "beforeMCPExecution", "beforeReadFile", "beforeShellExecution"):
+        for hook_name in (
+            "preToolUse",
+            "beforeMCPExecution",
+            "beforeReadFile",
+            "beforeShellExecution",
+        ):
             for entry in data["hooks"][hook_name]:
                 command = entry["command"]
                 assert str(cursor_hook_script_path(tmp_path).resolve()) in command
@@ -293,4 +385,6 @@ class TestHookInstallation:
     def test_installed_version_matches_package(self, tmp_path: Path):
         ensure_cursor_hooks(tmp_path)
         script = cursor_hook_script_path(tmp_path)
-        assert f"memclaw-hooks-version: {HOOKS_VERSION}" in script.read_text(encoding="utf-8")
+        assert f"memclaw-hooks-version: {HOOKS_VERSION}" in script.read_text(
+            encoding="utf-8"
+        )

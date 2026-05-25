@@ -5,7 +5,7 @@ from __future__ import annotations
 from ..tools import TOOL_DEFINITIONS
 from .mcp_tools import MCP_SERVER_NAME
 
-HOOKS_VERSION = 8
+HOOKS_VERSION = 9
 
 MEMCLAW_TOOL_NAMES = frozenset(defn["name"] for defn in TOOL_DEFINITIONS)
 
@@ -48,10 +48,11 @@ CURSOR_PRETOOLUSE_MATCHER = "|".join(BUILTIN_TOOLS_DISALLOW)
 CALL_MCP_BRIDGE_TOOL_NAMES = frozenset({"call_mcp_tool", "callmcptool"})
 
 
-def hook_policy_payload() -> dict[str, object]:
+def hook_policy_payload(*, mcp_http_port: int) -> dict[str, object]:
     """JSON-serializable policy written beside the installed hook script."""
     return {
         "hooks_version": HOOKS_VERSION,
+        "mcp_http_port": int(mcp_http_port),
         "allowed_mcp_provider": MCP_SERVER_NAME,
         "memclaw_tool_names": sorted(MEMCLAW_TOOL_NAMES),
         "cursor_builtin_tool_names": sorted(CURSOR_BUILTIN_TOOL_NAMES),

@@ -47,10 +47,17 @@ def _installed_hook_version(script_path: Path) -> int | None:
     return int(match.group(1))
 
 
-def _write_hook_policy(hooks_dir: Path) -> None:
+def _write_hook_policy(hooks_dir: Path, memory_dir: Path) -> None:
+    from ..config import MemclawConfig
+
+    cfg = MemclawConfig(memory_dir=memory_dir)
     policy_path = hooks_dir / _HOOK_POLICY_JSON
     policy_path.write_text(
-        json.dumps(hook_policy_payload(), indent=2) + "\n",
+        json.dumps(
+            hook_policy_payload(mcp_http_port=cfg.mcp_http_port),
+            indent=2,
+        )
+        + "\n",
         encoding="utf-8",
     )
 
@@ -86,7 +93,11 @@ def cursor_hooks_installed(memory_dir: Path) -> bool:
     hooks_json = cursor_hooks_json_path(memory_dir)
     script_path = cursor_hook_script_path(memory_dir)
     policy_path = cursor_hook_policy_path(memory_dir)
-    if not hooks_json.is_file() or not script_path.is_file() or not policy_path.is_file():
+    if (
+        not hooks_json.is_file()
+        or not script_path.is_file()
+        or not policy_path.is_file()
+    ):
         return False
     return _installed_hook_version(script_path) == HOOKS_VERSION
 
@@ -104,7 +115,7 @@ def ensure_cursor_hooks(memory_dir: Path) -> bool:
     script_path = cursor_hook_script_path(memory_dir)
     shutil.copy2(packaged / _HOOK_SCRIPT, script_path)
     script_path.chmod(0o755)
-    _write_hook_policy(target_hooks)
+    _write_hook_policy(target_hooks, memory_dir)
     _write_hooks_json(memory_dir, script_path.resolve())
 
     return cursor_hooks_installed(memory_dir)
@@ -115,7 +126,11 @@ def cursor_hooks_status(memory_dir: Path) -> str:
     hooks_json = cursor_hooks_json_path(memory_dir)
     script_path = cursor_hook_script_path(memory_dir)
     policy_path = cursor_hook_policy_path(memory_dir)
-    if not hooks_json.is_file() or not script_path.is_file() or not policy_path.is_file():
+    if (
+        not hooks_json.is_file()
+        or not script_path.is_file()
+        or not policy_path.is_file()
+    ):
         return "missing"
     version = _installed_hook_version(script_path)
     if version != HOOKS_VERSION:
@@ -124,12 +139,20 @@ def cursor_hooks_status(memory_dir: Path) -> str:
         config = json.loads(hooks_json.read_text(encoding="utf-8"))
     except json.JSONDecodeError:
         return "invalid hooks.json"
-    for hook_name in ("preToolUse", "beforeMCPExecution", "beforeReadFile", "beforeShellExecution"):
+    for hook_name in (
+        "preToolUse",
+        "beforeMCPExecution",
+        "beforeReadFile",
+        "beforeShellExecution",
+    ):
         entries = config.get("hooks", {}).get(hook_name, [])
         if not entries:
             return f"{hook_name} hook not configured"
         for entry in entries:
             command = entry.get("command", "")
-            if str(script_path.resolve()) not in command and _HOOK_SCRIPT not in command:
+            if (
+                str(script_path.resolve()) not in command
+                and _HOOK_SCRIPT not in command
+            ):
                 return f"{hook_name} hook points elsewhere"
     return f"ready (memclaw MCP provider={MCP_SERVER_NAME!r}, setting_sources=project)"
