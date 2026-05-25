@@ -233,6 +233,8 @@ def consolidate(ctx, since_date):
     async def _run():
         agent = MemclawAgent(config)
         try:
+            with console.status("[cyan]Syncing index...[/cyan]"):
+                await agent.start()
             with console.status("[cyan]Running consolidation...[/cyan]"):
                 result = await agent._maybe_consolidate(
                     force=True, consolidated_through_override=override
