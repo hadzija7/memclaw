@@ -84,7 +84,8 @@ class LinkProcessor:
                     },
                     {"role": "user", "content": f"Summarize content from {url}:\n\n{content}"},
                 ],
-                max_completion_tokens=100,
+                reasoning_effort="low",
+                max_completion_tokens=300,
             )
             return response.choices[0].message.content or ""
         except Exception as e:
