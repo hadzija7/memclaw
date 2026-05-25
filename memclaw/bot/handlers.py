@@ -204,10 +204,19 @@ class MessageHandlers:
         file = await context.bot.get_file(voice.file_id)
         voice_bytes = await file.download_as_bytearray()
 
-        transcription = await self.openai_client.audio.transcriptions.create(
-            model="whisper-1",
-            file=("voice.ogg", bytes(voice_bytes), "audio/ogg"),
-        )
+        try:
+            transcription = await self.openai_client.audio.transcriptions.create(
+                model="whisper-1",
+                file=("voice.ogg", bytes(voice_bytes), "audio/ogg"),
+            )
+        except Exception as exc:
+            logger.exception("Whisper transcription failed: {exc}", exc=exc)
+            await update.message.reply_text(
+                "I couldn't transcribe that voice message. "
+                "If you set up Memclaw recently, run `memclaw doctor` to check "
+                "your OpenAI key has access to the whisper-1 model."
+            )
+            return
         text = transcription.text
         logger.info(f"Transcribed: {text}")
 

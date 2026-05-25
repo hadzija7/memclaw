@@ -323,3 +323,18 @@ def run_setup(*, reconfigure: bool = False) -> None:
             os.environ[k] = v
 
     console.print(f"\n[green]Config saved to {ENV_FILE}[/green]")
+
+    # Verify OpenAI model access so the user finds out about disabled models
+    # right now, not when their first voice message silently disappears.
+    api_key = values.get("OPENAI_API_KEY")
+    if api_key:
+        import asyncio
+
+        from .openai_health import print_probe_report, probe_openai
+
+        console.print("\n[cyan]Checking OpenAI model access...[/cyan]")
+        try:
+            report = asyncio.run(probe_openai(api_key))
+            print_probe_report(report, console)
+        except Exception as exc:
+            console.print(f"[yellow]Skipping model check:[/yellow] {exc}")

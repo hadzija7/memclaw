@@ -281,7 +281,12 @@ memclaw index
 
 # Check your memory vault
 memclaw status
+
+# Verify your OpenAI key has access to every model Memclaw uses
+memclaw doctor
 ```
+
+If voice messages aren't being transcribed or link summaries come back empty, run `memclaw doctor`. It probes the three OpenAI models Memclaw depends on — `text-embedding-3-small` (search), `gpt-5-mini` (link summaries), and `whisper-1` (voice) — and tells you which ones your project has access to. The same check runs automatically at the end of the setup wizard.
 
 ### Saving Images
 

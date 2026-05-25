@@ -448,3 +448,19 @@ def configure(ctx):
     """Update API keys, agent backend, and front-end platform."""
     print_logo()
     run_setup(reconfigure=True)
+
+
+@cli.command()
+@click.pass_context
+def doctor(ctx):
+    """Check that your OpenAI key can reach every model Memclaw uses."""
+    from .openai_health import print_probe_report, probe_openai
+
+    config: MemclawConfig = ctx.obj["config"]
+    _require_openai(config)
+
+    with console.status("[cyan]Probing OpenAI...[/cyan]"):
+        report = asyncio.run(probe_openai(config.openai_api_key))
+    print_probe_report(report, console)
+    if not report.all_ok:
+        raise SystemExit(1)

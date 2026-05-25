@@ -207,10 +207,22 @@ class SlackHandlers:
         mime = file_info.get("mimetype", "audio/mp4")
         ext = _mime_to_ext(mime) or ".m4a"
 
-        transcription = await self.openai_client.audio.transcriptions.create(
-            model="whisper-1",
-            file=(f"audio{ext}", audio_bytes, mime),
-        )
+        try:
+            transcription = await self.openai_client.audio.transcriptions.create(
+                model="whisper-1",
+                file=(f"audio{ext}", audio_bytes, mime),
+            )
+        except Exception as exc:
+            logger.exception("Whisper transcription failed: {exc}", exc=exc)
+            await say(
+                text=(
+                    "I couldn't transcribe that voice message. "
+                    "If you set up Memclaw recently, run `memclaw doctor` to check "
+                    "your OpenAI key has access to the whisper-1 model."
+                ),
+                thread_ts=thread_ts,
+            )
+            return
         text = transcription.text
         logger.info("Transcribed Slack audio: {t}", t=text)
 

@@ -207,10 +207,20 @@ class WhatsAppBot:
         mime_type = audio_msg.mimetype or "audio/ogg"
         ext = _mime_to_ext(mime_type) or ".ogg"
 
-        transcription = await self.openai_client.audio.transcriptions.create(
-            model="whisper-1",
-            file=(f"voice{ext}", audio_bytes, mime_type),
-        )
+        try:
+            transcription = await self.openai_client.audio.transcriptions.create(
+                model="whisper-1",
+                file=(f"voice{ext}", audio_bytes, mime_type),
+            )
+        except Exception as exc:
+            logger.exception("Whisper transcription failed: {exc}", exc=exc)
+            await cli.reply_message(
+                "I couldn't transcribe that voice message. "
+                "If you set up Memclaw recently, run `memclaw doctor` to check "
+                "your OpenAI key has access to the whisper-1 model.",
+                ev,
+            )
+            return
         text = transcription.text
         logger.info("Transcribed WhatsApp voice: {t}", t=text)
 
