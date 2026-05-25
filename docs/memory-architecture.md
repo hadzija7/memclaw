@@ -16,7 +16,7 @@ The agent keeps a rolling buffer of recent messages — both yours and its own r
 
 - Each time you send a message, it's appended to an in-memory list along with a timestamp.
 - When the agent responds, that response is appended too.
-- The buffer is capped at the last 10 exchanges (20 entries: 10 from you, 10 from the agent). Older entries are dropped.
+- After each append, the buffer is trimmed to the **union** of two rolling windows: the last 10 exchanges (20 entries) and every entry timestamped within the last hour. Whichever set is larger wins; older entries that fall outside both are dropped.
 - The full history is formatted and included in the system prompt so the agent can see what was said earlier in the session.
 
 **What this means in practice:**
@@ -30,11 +30,13 @@ Assistant: Your dog's name is Max.
 
 Without this buffer, the second question would get "I don't know" because each message was previously independent.
 
+The union policy matters in two regimes. During a quick burst of chatter (say, 30 messages in five minutes) the time window keeps **all** of them in scope, even though the 10-pair floor alone would have dropped the oldest. During a slow conversation with long gaps, the time window may be empty, but the 10-pair floor still guarantees continuity across resumption.
+
 **Limitations:**
 
 - The buffer resets when the process restarts. It is not written to disk.
 - For images, the history stores `[User sent a photo]` as a placeholder — not the actual image data.
-- The default limit of 10 pairs is configurable via `conversation_history_limit`.
+- Both bounds are configurable: `conversation_history_limit` (default `10` pairs) and `conversation_history_window_minutes` (default `60`).
 
 ### Memory Context Injection
 
@@ -233,7 +235,8 @@ All memory-related settings live in `MemclawConfig`:
 | `text_weight` | `0.3` | Weight for keyword search in hybrid merge |
 | `decay_half_life_days` | `30` | Days until a daily memory's score halves (0 = disabled) |
 | `mmr_lambda` | `0.7` | Relevance vs. diversity trade-off in MMR (1.0 = pure relevance) |
-| `conversation_history_limit` | `10` | Number of message pairs to keep in session buffer |
+| `conversation_history_limit` | `10` | Minimum message pairs to keep in session buffer (count floor of the union policy) |
+| `conversation_history_window_minutes` | `60` | Time window for the session buffer — every entry newer than this is also retained |
 | `consolidation_threshold` | `7` | Number of unconsolidated daily files before auto-consolidation |
 
 ---
@@ -256,7 +259,7 @@ User Message
 │           ├─ image_save / telegram_image_save → store image metadata
 │           └─ image_search  → vector search over image descriptions
 ├─ 6. Append assistant response to history buffer
-├─ 7. Trim history to last N pairs
+├─ 7. Trim history to union of (last N pairs) and (entries within the time window)
 │
 └─ Return response (+ any found images for Telegram)
 ```

@@ -8,7 +8,7 @@ behavior (env scrubbing, MCP wrapping, …) is tested separately in
 from __future__ import annotations
 
 import json
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any
 from unittest.mock import AsyncMock
@@ -108,27 +108,119 @@ class TestConversationHistory:
         agent.close()
 
     def test_history_trimming(self, cfg: MemclawConfig, fake_backend: FakeBackend):
-        """History should be trimmed to conversation_history_limit * 2."""
+        """Floor case: when every entry is older than the time window, the
+        count floor still keeps the last `limit * 2` entries."""
         cfg.conversation_history_limit = 3  # Keep last 3 pairs = 6 entries
+        cfg.conversation_history_window_minutes = 60
         agent = _make_agent(cfg, fake_backend)
 
-        # Manually populate history with 10 entries
+        # All 10 entries timestamped 2 hours ago (outside the window).
+        old_ts = (datetime.now() - timedelta(hours=2)).isoformat()
         for i in range(10):
             agent._history.append({
                 "role": "user" if i % 2 == 0 else "assistant",
                 "content": f"message {i}",
-                "timestamp": datetime.now().isoformat(),
+                "timestamp": old_ts,
             })
 
-        # Simulate trimming (same logic as in handle())
-        max_entries = cfg.conversation_history_limit * 2
-        if len(agent._history) > max_entries:
-            agent._history = agent._history[-max_entries:]
+        agent._trim_history()
 
         assert len(agent._history) == 6
-        # Should keep the last 6 entries (messages 4-9)
         assert agent._history[0]["content"] == "message 4"
         assert agent._history[-1]["content"] == "message 9"
+        agent.close()
+
+    def test_history_window_dominates_floor(
+        self, cfg: MemclawConfig, fake_backend: FakeBackend
+    ):
+        """When many recent entries fall inside the window, all of them are
+        kept even though that exceeds the count floor."""
+        cfg.conversation_history_limit = 3  # floor = 6 entries
+        cfg.conversation_history_window_minutes = 60
+        agent = _make_agent(cfg, fake_backend)
+
+        recent_ts = (datetime.now() - timedelta(minutes=10)).isoformat()
+        for i in range(30):
+            agent._history.append({
+                "role": "user" if i % 2 == 0 else "assistant",
+                "content": f"message {i}",
+                "timestamp": recent_ts,
+            })
+
+        agent._trim_history()
+
+        assert len(agent._history) == 30
+        assert agent._history[0]["content"] == "message 0"
+        assert agent._history[-1]["content"] == "message 29"
+        agent.close()
+
+    def test_history_union_keeps_floor_plus_window(
+        self, cfg: MemclawConfig, fake_backend: FakeBackend
+    ):
+        """Mixed case: some entries within the window, some older. The retained
+        set is the union — at least the floor, plus any additional in-window
+        entries."""
+        cfg.conversation_history_limit = 3  # floor = 6 entries
+        cfg.conversation_history_window_minutes = 60
+        agent = _make_agent(cfg, fake_backend)
+
+        old_ts = (datetime.now() - timedelta(hours=2)).isoformat()
+        recent_ts = (datetime.now() - timedelta(minutes=5)).isoformat()
+
+        # 10 old entries, then 8 recent ones.
+        for i in range(10):
+            agent._history.append({
+                "role": "user" if i % 2 == 0 else "assistant",
+                "content": f"old {i}",
+                "timestamp": old_ts,
+            })
+        for i in range(8):
+            agent._history.append({
+                "role": "user" if i % 2 == 0 else "assistant",
+                "content": f"recent {i}",
+                "timestamp": recent_ts,
+            })
+
+        agent._trim_history()
+
+        # All 8 in-window entries are kept (exceeds floor of 6).
+        assert len(agent._history) == 8
+        assert all(e["content"].startswith("recent") for e in agent._history)
+        agent.close()
+
+    def test_history_floor_pulls_in_old_entries_to_meet_count(
+        self, cfg: MemclawConfig, fake_backend: FakeBackend
+    ):
+        """When the time window holds fewer than the floor count, the floor
+        pulls in older entries to bring the total up."""
+        cfg.conversation_history_limit = 3  # floor = 6 entries
+        cfg.conversation_history_window_minutes = 60
+        agent = _make_agent(cfg, fake_backend)
+
+        old_ts = (datetime.now() - timedelta(hours=2)).isoformat()
+        recent_ts = (datetime.now() - timedelta(minutes=5)).isoformat()
+
+        # 50 old entries + 4 recent — only 4 are in-window but floor is 6.
+        for i in range(50):
+            agent._history.append({
+                "role": "user" if i % 2 == 0 else "assistant",
+                "content": f"old {i}",
+                "timestamp": old_ts,
+            })
+        for i in range(4):
+            agent._history.append({
+                "role": "user" if i % 2 == 0 else "assistant",
+                "content": f"recent {i}",
+                "timestamp": recent_ts,
+            })
+
+        agent._trim_history()
+
+        # Keep exactly the floor (6): 2 trailing old + all 4 recent.
+        assert len(agent._history) == 6
+        assert agent._history[0]["content"] == "old 48"
+        assert agent._history[1]["content"] == "old 49"
+        assert agent._history[-1]["content"] == "recent 3"
         agent.close()
 
     def test_image_placeholder_in_history(self, cfg: MemclawConfig, fake_backend: FakeBackend):

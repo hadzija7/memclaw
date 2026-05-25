@@ -255,7 +255,7 @@ Every memory is chunked, embedded, and indexed in SQLite. Retrieval combines two
 
 ### Agent Layer
 
-A pluggable agent SDK drives the loop — Claude or Cursor, picked during setup ([Agent Backend](#agent-backend)). The agent maintains a rolling 10-message-pair conversation history and decides when to **store** vs **search** based on your intent.
+A pluggable agent SDK drives the loop — Claude or Cursor, picked during setup ([Agent Backend](#agent-backend)). The agent keeps a rolling conversation history that always covers at least the last 10 message pairs, plus any older messages from the last hour — whichever set is larger — so short bursts of chatter stay in context without dropping continuity during slower conversations. It decides when to **store** vs **search** based on your intent.
 
 | Tool | What it does |
 |------|-------------|

@@ -11,7 +11,7 @@ from __future__ import annotations
 import asyncio
 import json
 import time
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from pathlib import Path
 
 from loguru import logger
@@ -144,9 +144,31 @@ class MemclawAgent:
             "content": f"[Reminder fired] {text}",
             "timestamp": datetime.now().isoformat(),
         })
-        max_entries = self.config.conversation_history_limit * 2
-        if len(self._history) > max_entries:
-            self._history = self._history[-max_entries:]
+        self._trim_history()
+
+    def _trim_history(self) -> None:
+        """Retain the union of: the last N pairs, and entries newer than the
+        configured time window. Entries are appended chronologically, so the
+        "within window" subset is always a contiguous suffix."""
+        if not self._history:
+            return
+        count_floor = self.config.conversation_history_limit * 2
+        cutoff = datetime.now() - timedelta(
+            minutes=self.config.conversation_history_window_minutes
+        )
+        in_window = 0
+        for entry in reversed(self._history):
+            try:
+                ts = datetime.fromisoformat(entry["timestamp"])
+            except (KeyError, ValueError):
+                break
+            if ts >= cutoff:
+                in_window += 1
+            else:
+                break
+        keep = max(count_floor, in_window)
+        if len(self._history) > keep:
+            self._history = self._history[-keep:]
 
     async def start(self, *, include_backend: bool = True):
         await self.index.sync()
@@ -371,9 +393,7 @@ class MemclawAgent:
             "timestamp": datetime.now().isoformat(),
         })
 
-        max_entries = self.config.conversation_history_limit * 2
-        if len(self._history) > max_entries:
-            self._history = self._history[-max_entries:]
+        self._trim_history()
 
         return (response_text, list(self._found_images))
 
