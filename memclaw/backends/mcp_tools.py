@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+from loguru import logger
 from mcp.server import Server
 from mcp.types import CallToolResult, TextContent, Tool
 
@@ -36,7 +37,6 @@ def build_memclaw_mcp_server(executor: "ToolExecutor") -> Server:
     async def call_tool(name: str, arguments: dict[str, Any]) -> CallToolResult:
         if name not in tool_names:
             raise ValueError(f"Tool {name!r} not found")
-        from loguru import logger
 
         logger.info("MCP call: {name}({args})", name=name, args=arguments)
         text = await executor.execute(name, arguments or {})

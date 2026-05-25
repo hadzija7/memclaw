@@ -79,10 +79,9 @@ class HttpMcpServer:
         host: str = "127.0.0.1",
         port: int,
     ) -> None:
+        self._executor = executor
         if self.is_running:
             return
-
-        self._executor = executor
         self._host = host
         self._port = port
 

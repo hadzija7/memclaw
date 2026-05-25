@@ -4,6 +4,9 @@
 Installed to ~/.memclaw/.cursor/hooks/ by the Cursor backend.
 Handles preToolUse, beforeMCPExecution, beforeReadFile, and beforeShellExecution.
 memclaw-hooks-version: 7
+
+Tool allowlists are loaded from hook_policy.json (written on install from
+memclaw.backends.tool_policy).
 """
 
 from __future__ import annotations
@@ -15,55 +18,22 @@ from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import urlparse
 
-ALLOWED_MCP_PROVIDER = "memclaw"
-HOOKS_VERSION = 7
+_POLICY_FILE = "hook_policy.json"
 
-# Cursor's generic MCP bridge tool names (preToolUse may use these instead of "mcp").
-CALL_MCP_BRIDGE_TOOL_NAMES = frozenset({"call_mcp_tool", "callmcptool"})
 
-# Keep in sync with memclaw.tools.TOOL_DEFINITIONS (verified in tests).
-MEMCLAW_MCP_TOOL_NAMES = frozenset(
-    {
-        "memory_save",
-        "memory_search",
-        "image_save",
-        "image_search",
-        "update_instructions",
-        "file_write",
-        "file_read",
-        "reminder_create",
-        "reminder_list",
-        "reminder_cancel",
-    }
-)
+def _load_policy() -> dict:
+    policy_path = Path(__file__).resolve().parent / _POLICY_FILE
+    data = json.loads(policy_path.read_text(encoding="utf-8"))
+    return data
 
-# Cursor built-ins that must never run in Memclaw (mirrors claude backend list).
-CURSOR_BUILTIN_TOOL_NAMES = frozenset(
-    {
-        "bash",
-        "bashoutput",
-        "killbash",
-        "read",
-        "write",
-        "edit",
-        "notebookedit",
-        "grep",
-        "glob",
-        "task",
-        "webfetch",
-        "websearch",
-        "todowrite",
-        "slashcommand",
-        "exitplanmode",
-        "shell",
-        "delete",
-        "listdir",
-        "list_dir",
-        "search",
-        "applypatch",
-        "apply_patch",
-    }
-)
+
+_POLICY = _load_policy()
+
+ALLOWED_MCP_PROVIDER = str(_POLICY["allowed_mcp_provider"])
+HOOKS_VERSION = int(_POLICY["hooks_version"])
+MEMCLAW_MCP_TOOL_NAMES = frozenset(_POLICY["memclaw_tool_names"])
+CURSOR_BUILTIN_TOOL_NAMES = frozenset(_POLICY["cursor_builtin_tool_names"])
+CALL_MCP_BRIDGE_TOOL_NAMES = frozenset(_POLICY["call_mcp_bridge_tool_names"])
 
 _DENY_RESPONSE = {
     "permission": "deny",
@@ -117,7 +87,6 @@ def _is_local_memclaw_mcp_url(url: str) -> bool:
     if host not in {"127.0.0.1", "localhost", "::1"}:
         return False
     path = (parsed.path or "").rstrip("/")
-    # Cursor may send the configured /mcp URL, a subpath, or the bare host:port.
     return path in {"", "/mcp"} or path.startswith("/mcp/")
 
 
@@ -130,7 +99,6 @@ def _parse_mcp_colon_tool_name(tool_name: str) -> tuple[str | None, str | None]:
         return None, None
     if len(parts) >= 3 and parts[2]:
         return parts[1], parts[2]
-    # Cursor sends MCP:memory_save when only one MCP server is configured.
     name = parts[1]
     if name in MEMCLAW_MCP_TOOL_NAMES:
         return ALLOWED_MCP_PROVIDER, name

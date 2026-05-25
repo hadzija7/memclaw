@@ -100,6 +100,18 @@ class AgentBackend(Protocol):
         """
         ...
 
+    # Lifecycle (optional no-ops for backends without extra setup) ---------
+    async def on_agent_start(self, tool_executor: "ToolExecutor") -> None:
+        """Called once when MemclawAgent starts (after index sync).
+
+        Backends use this for process-scoped resources (e.g. a local MCP server).
+        """
+        ...
+
+    async def on_agent_shutdown(self) -> None:
+        """Called when MemclawAgent shuts down asynchronously."""
+        ...
+
     # Runtime --------------------------------------------------------------
     async def run_one_shot(
         self,
@@ -123,9 +135,12 @@ class AgentBackend(Protocol):
         """Run one full agentic turn with tool access.
 
         The backend is responsible for translating ``TOOL_DEFINITIONS``
-        into its SDK's tool format, routing tool calls back through
-        ``tool_executor.execute(name, args)``, and capping iterations
-        at ``max_turns``.
+        into its SDK's tool format and routing tool calls back through
+        ``tool_executor.execute(name, args)``.
+
+        ``max_turns`` is passed to SDKs that support it (e.g. Claude).
+        Backends without a native cap should log when reported turns exceed
+        this limit after the run completes.
         """
         ...
 

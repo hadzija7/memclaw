@@ -10,10 +10,11 @@ import sys
 from pathlib import Path
 
 from .mcp_tools import MCP_SERVER_NAME
+from .tool_policy import CURSOR_PRETOOLUSE_MATCHER, HOOKS_VERSION, hook_policy_payload
 
-HOOKS_VERSION = 7
 _HOOKS_JSON = "hooks.json"
 _HOOK_SCRIPT = "allow_memclaw_tools.py"
+_HOOK_POLICY_JSON = "hook_policy.json"
 _VERSION_MARKER = re.compile(r"memclaw-hooks-version:\s*(\d+)")
 
 
@@ -29,6 +30,10 @@ def cursor_hooks_json_path(memory_dir: Path) -> Path:
     return cursor_hooks_dir(memory_dir) / _HOOKS_JSON
 
 
+def cursor_hook_policy_path(memory_dir: Path) -> Path:
+    return cursor_hooks_dir(memory_dir) / "hooks" / _HOOK_POLICY_JSON
+
+
 def _packaged_defaults() -> Path:
     return Path(str(importlib.resources.files("memclaw.defaults") / "cursor_hooks"))
 
@@ -42,21 +47,27 @@ def _installed_hook_version(script_path: Path) -> int | None:
     return int(match.group(1))
 
 
+def _write_hook_policy(hooks_dir: Path) -> None:
+    policy_path = hooks_dir / _HOOK_POLICY_JSON
+    policy_path.write_text(
+        json.dumps(hook_policy_payload(), indent=2) + "\n",
+        encoding="utf-8",
+    )
+
+
 def _write_hooks_json(memory_dir: Path, script_path: Path) -> None:
     """Write hooks.json with an absolute command path for reliable execution."""
     command = f"{sys.executable} {script_path}"
     hook_entry = {"command": command, "failClosed": True}
-    # Match built-in Cursor tools explicitly so preToolUse fires even when the
-    # bridge uses tool names that skip the generic hook path.
-    builtin_matcher = (
-        "Glob|Grep|Read|Write|Edit|Shell|Task|Delete|NotebookEdit|"
-        "WebFetch|WebSearch|TodoWrite|Bash|ApplyPatch|ListDir"
-    )
     config = {
         "version": 1,
         "hooks": {
             "preToolUse": [
-                {"command": command, "matcher": builtin_matcher, "failClosed": True},
+                {
+                    "command": command,
+                    "matcher": CURSOR_PRETOOLUSE_MATCHER,
+                    "failClosed": True,
+                },
                 hook_entry,
             ],
             "beforeMCPExecution": [hook_entry],
@@ -74,7 +85,8 @@ def cursor_hooks_installed(memory_dir: Path) -> bool:
     """Return True when Memclaw's Cursor preToolUse hook is present and current."""
     hooks_json = cursor_hooks_json_path(memory_dir)
     script_path = cursor_hook_script_path(memory_dir)
-    if not hooks_json.is_file() or not script_path.is_file():
+    policy_path = cursor_hook_policy_path(memory_dir)
+    if not hooks_json.is_file() or not script_path.is_file() or not policy_path.is_file():
         return False
     return _installed_hook_version(script_path) == HOOKS_VERSION
 
@@ -92,6 +104,7 @@ def ensure_cursor_hooks(memory_dir: Path) -> bool:
     script_path = cursor_hook_script_path(memory_dir)
     shutil.copy2(packaged / _HOOK_SCRIPT, script_path)
     script_path.chmod(0o755)
+    _write_hook_policy(target_hooks)
     _write_hooks_json(memory_dir, script_path.resolve())
 
     return cursor_hooks_installed(memory_dir)
@@ -101,7 +114,8 @@ def cursor_hooks_status(memory_dir: Path) -> str:
     """Human-readable hook status for logs and configuration help."""
     hooks_json = cursor_hooks_json_path(memory_dir)
     script_path = cursor_hook_script_path(memory_dir)
-    if not hooks_json.is_file() or not script_path.is_file():
+    policy_path = cursor_hook_policy_path(memory_dir)
+    if not hooks_json.is_file() or not script_path.is_file() or not policy_path.is_file():
         return "missing"
     version = _installed_hook_version(script_path)
     if version != HOOKS_VERSION:

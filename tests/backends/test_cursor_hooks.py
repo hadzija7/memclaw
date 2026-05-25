@@ -10,14 +10,15 @@ from pathlib import Path
 import pytest
 
 from memclaw.backends.cursor_hooks import (
-    HOOKS_VERSION,
     cursor_hook_script_path,
     cursor_hooks_installed,
     cursor_hooks_json_path,
     cursor_hooks_status,
     ensure_cursor_hooks,
 )
+from memclaw.backends.tool_policy import HOOKS_VERSION, MEMCLAW_TOOL_NAMES
 from memclaw.defaults.cursor_hooks.allow_memclaw_tools import (
+    HOOKS_VERSION as INSTALLED_HOOKS_VERSION,
     MEMCLAW_MCP_TOOL_NAMES,
     is_allowed_file_read,
     is_allowed_mcp_execution,
@@ -28,9 +29,13 @@ from memclaw.tools import TOOL_DEFINITIONS
 
 
 class TestHookPolicy:
+    def test_hook_versions_match_tool_policy(self):
+        assert INSTALLED_HOOKS_VERSION == HOOKS_VERSION
+
     def test_hook_tool_names_match_executor(self):
         defined = {defn["name"] for defn in TOOL_DEFINITIONS}
         assert MEMCLAW_MCP_TOOL_NAMES == defined
+        assert MEMCLAW_TOOL_NAMES == defined
 
     @pytest.mark.parametrize(
         ("tool_name", "tool_input", "expected"),

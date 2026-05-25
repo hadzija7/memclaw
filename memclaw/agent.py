@@ -16,8 +16,7 @@ from pathlib import Path
 
 from loguru import logger
 
-from .backends import AgentBackend, build_backend, resolve_backend_name
-from .backends.cursor import CursorAgentBackend
+from .backends import AgentBackend, build_backend
 from .config import MemclawConfig
 from .index import MemoryIndex
 from .reminders import ReminderScheduler
@@ -150,16 +149,11 @@ class MemclawAgent:
 
     async def start(self):
         await self.index.sync()
-        if (
-            resolve_backend_name(self.config) == CursorAgentBackend.name
-            and isinstance(self.backend, CursorAgentBackend)
-        ):
-            await self.backend.start_mcp_server(self._tools)
+        await self.backend.on_agent_start(self._tools)
 
     async def aclose(self):
-        """Async shutdown: stop MCP server (Cursor) then release resources."""
-        if isinstance(self.backend, CursorAgentBackend):
-            await self.backend.stop_mcp_server()
+        """Async shutdown: release backend resources then sync cleanup."""
+        await self.backend.on_agent_shutdown()
         self.close()
 
     async def start_background_sync(self, interval: int = 60):

@@ -29,6 +29,8 @@ from rich.prompt import Prompt
 
 from ..tools import TOOL_DEFINITIONS
 from .base import TurnResult
+from .mcp_tools import MCP_SERVER_NAME
+from .tool_policy import BUILTIN_TOOLS_DISALLOW
 
 if TYPE_CHECKING:
     from rich.console import Console
@@ -44,18 +46,6 @@ _MODEL = "claude-sonnet-4-6"
 _INPUT_COST_PER_M = 3.0
 _OUTPUT_COST_PER_M = 15.0
 
-# Claude Code built-ins are disabled so the agent only sees our MCP tools.
-_BUILTIN_TOOLS_DISALLOW = [
-    "Bash", "BashOutput", "KillBash",
-    "Read", "Write", "Edit", "NotebookEdit",
-    "Grep", "Glob",
-    "Task",
-    "WebFetch", "WebSearch",
-    "TodoWrite",
-    "SlashCommand", "ExitPlanMode",
-]
-
-MCP_SERVER_NAME = "memclaw"
 _ALLOWED_TOOLS = [
     f"mcp__{MCP_SERVER_NAME}__{t['name']}" for t in TOOL_DEFINITIONS
 ]
@@ -244,6 +234,14 @@ class ClaudeAgentBackend:
 
         return {env_key: value}, [drop_key]
 
+    # -- Lifecycle ---------------------------------------------------------
+
+    async def on_agent_start(self, tool_executor: "ToolExecutor") -> None:
+        pass
+
+    async def on_agent_shutdown(self) -> None:
+        pass
+
     # -- Runtime ---------------------------------------------------------
 
     async def run_one_shot(
@@ -257,7 +255,7 @@ class ClaudeAgentBackend:
             model=_MODEL,
             system_prompt=system_prompt,
             setting_sources=None,
-            disallowed_tools=_BUILTIN_TOOLS_DISALLOW,
+            disallowed_tools=BUILTIN_TOOLS_DISALLOW,
             max_turns=1,
         )
 
@@ -294,10 +292,10 @@ class ClaudeAgentBackend:
             setting_sources=None,
             mcp_servers={MCP_SERVER_NAME: self._mcp_server},
             allowed_tools=_ALLOWED_TOOLS,
-            disallowed_tools=_BUILTIN_TOOLS_DISALLOW,
+            disallowed_tools=BUILTIN_TOOLS_DISALLOW,
             # SAFETY: bypassPermissions is only safe because allowed_tools
             # restricts execution to mcp__memclaw__* (our in-process server)
-            # and _BUILTIN_TOOLS_DISALLOW blocks Claude Code's built-ins.
+            # and BUILTIN_TOOLS_DISALLOW blocks Claude Code's built-ins.
             # If either guardrail is loosened, revisit this — bypass mode
             # would otherwise turn any future broad tool into an RCE vector.
             permission_mode="bypassPermissions",

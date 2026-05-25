@@ -13,11 +13,13 @@ from memclaw.backends import REGISTRY, get_backend_class
 from memclaw.backends.cursor import (
     CursorAgentBackend,
     _agent_options,
-    _assistant_message_text,
     _build_combined_prompt,
     _build_user_message,
-    _collect_run_result,
-    _normalize_tool_call,
+)
+from memclaw.backends.cursor_sdk_adapter import (
+    assistant_message_text,
+    collect_run_result,
+    normalize_tool_call,
 )
 from memclaw.backends.mcp_bridge import HttpMcpServer
 from memclaw.backends.cursor_hooks import cursor_hooks_installed
@@ -85,7 +87,7 @@ class TestCursorAgentBackendConfig:
         assert backend._model == "composer-2.5"
         assert backend._cwd == str(cfg.memory_dir)
         assert backend.bills_per_token is True
-        assert cursor_hooks_installed(cfg.memory_dir) is True
+        assert cursor_hooks_installed(cfg.memory_dir) is False
 
 
 class TestPromptBuilding:
@@ -98,7 +100,7 @@ class TestPromptBuilding:
         assert options.local.setting_sources == ["project"]
 
     def test_normalize_tool_call_unwraps_mcp_wrapper(self):
-        name, args = _normalize_tool_call(
+        name, args = normalize_tool_call(
             "mcp",
             {
                 "providerIdentifier": "memclaw",
@@ -110,7 +112,7 @@ class TestPromptBuilding:
         assert args == {"content": "hello"}
 
     def test_normalize_tool_call_strips_memclaw_prefix(self):
-        name, args = _normalize_tool_call("memclaw_file_write", {"file_path": "x.md"})
+        name, args = normalize_tool_call("memclaw_file_write", {"file_path": "x.md"})
         assert name == "file_write"
         assert args == {"file_path": "x.md"}
 
@@ -148,7 +150,7 @@ class TestCollectRunResult:
                 ],
             ),
         )
-        assert _assistant_message_text(message) == "Here's a motivational video for you."
+        assert assistant_message_text(message) == "Here's a motivational video for you."
 
     @pytest.mark.asyncio
     async def test_collect_run_result_prefers_longer_wait_text(self):
@@ -169,7 +171,7 @@ class TestCollectRunResult:
             ),
         )
 
-        result = await _collect_run_result(mock_run)
+        result = await collect_run_result(mock_run, max_turns=10)
         assert "motivational video" in result.text
         assert result.text != "you."
 
@@ -224,6 +226,8 @@ class TestCursorAgentBackendRuns:
         mock_mcp = HttpMcpServerConfig(url="http://127.0.0.1:8765/mcp", type="http")
 
         with patch("cursor_sdk.AsyncClient") as mock_client_cls, patch.object(
+            backend, "_ensure_mcp_server", new_callable=AsyncMock
+        ), patch.object(
             HttpMcpServer, "config", new_callable=PropertyMock, return_value=mock_mcp
         ):
             mock_client_cls.launch_bridge = AsyncMock(return_value=mock_client)
@@ -250,9 +254,10 @@ class TestCursorAgentBackendRuns:
         cfg = _make_config(tmp_path, cursor_api_key="crsr_test_key")
         backend = CursorAgentBackend(cfg)
 
-        with patch("cursor_sdk.AsyncClient") as mock_client_cls:
-            mock_client_cls.launch_bridge = AsyncMock(return_value=AsyncMock())
-            with pytest.raises(RuntimeError, match="MCP server not started"):
+        with patch.object(backend, "_ensure_mcp_server", new_callable=AsyncMock), patch.object(
+            HttpMcpServer, "config", new_callable=PropertyMock, return_value=None
+        ):
+            with pytest.raises(RuntimeError, match="MCP server failed to start"):
                 await backend.run_turn(
                     system_prompt="System",
                     user_message="User",
@@ -271,13 +276,13 @@ class TestCursorAgentBackendRuns:
         assert isinstance(agent.backend, CursorAgentBackend)
 
         with patch.object(agent.index, "sync", new_callable=AsyncMock), patch.object(
-            CursorAgentBackend, "start_mcp_server", new_callable=AsyncMock
+            CursorAgentBackend, "on_agent_start", new_callable=AsyncMock
         ) as mock_start:
             await agent.start()
             mock_start.assert_awaited_once_with(agent._tools)
 
         with patch.object(
-            CursorAgentBackend, "stop_mcp_server", new_callable=AsyncMock
+            CursorAgentBackend, "on_agent_shutdown", new_callable=AsyncMock
         ) as mock_stop:
             await agent.aclose()
             mock_stop.assert_awaited_once()
