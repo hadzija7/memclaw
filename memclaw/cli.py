@@ -55,7 +55,6 @@ def _ensure_setup(ctx):
         run_setup(memory_dir=ctx.obj.get("memory_dir"))
         # Reload .env so newly saved keys are picked up
         from dotenv import load_dotenv
-
         load_dotenv(Path.home() / ".memclaw" / ".env", override=True)
         memory_dir = ctx.obj.get("memory_dir")
         config = MemclawConfig(memory_dir=memory_dir) if memory_dir else MemclawConfig()
@@ -98,7 +97,6 @@ def cli(ctx, memory_dir):
 # ------------------------------------------------------------------
 # Interactive (terminal) mode
 # ------------------------------------------------------------------
-
 
 async def _interactive(config: MemclawConfig):
     import sys
@@ -318,12 +316,9 @@ def _run_slack(config: MemclawConfig) -> None:
 # Direct commands (work without the Claude agent / Anthropic key)
 # ------------------------------------------------------------------
 
-
 @cli.command()
 @click.argument("content")
-@click.option(
-    "--permanent", is_flag=True, help="Save to MEMORY.md instead of today's daily file"
-)
+@click.option("--permanent", is_flag=True, help="Save to MEMORY.md instead of today's daily file")
 @click.pass_context
 def save(ctx, content, permanent):
     """Save a memory directly (no agent needed)."""
@@ -367,12 +362,7 @@ def search(ctx, query_text, limit):
 
 
 @cli.command()
-@click.option(
-    "--since",
-    "since_date",
-    default=None,
-    help="Consolidate daily files after this date (YYYY-MM-DD)",
-)
+@click.option("--since", "since_date", default=None, help="Consolidate daily files after this date (YYYY-MM-DD)")
 @click.pass_context
 def consolidate(ctx, since_date):
     """Consolidate daily memory files into MEMORY.md."""
@@ -390,9 +380,7 @@ def consolidate(ctx, since_date):
         try:
             override = date_type.fromisoformat(since_date)
         except ValueError:
-            console.print(
-                f"[red]Error:[/red] Invalid date format: {since_date}. Use YYYY-MM-DD."
-            )
+            console.print(f"[red]Error:[/red] Invalid date format: {since_date}. Use YYYY-MM-DD.")
             raise SystemExit(1)
 
     async def _run():
@@ -405,9 +393,7 @@ def consolidate(ctx, since_date):
                     force=True, consolidated_through_override=override
                 )
             if result:
-                console.print(
-                    "[green]Consolidation complete.[/green] MEMORY.md has been updated."
-                )
+                console.print("[green]Consolidation complete.[/green] MEMORY.md has been updated.")
             else:
                 console.print("[yellow]No daily files to consolidate.[/yellow]")
         finally:
