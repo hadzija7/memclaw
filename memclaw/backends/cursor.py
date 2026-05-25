@@ -149,20 +149,19 @@ class CursorAgentBackend:
         from rich.prompt import Prompt
 
         model_answer = Prompt.ask(
-            f"Cursor model [{model_current or _DEFAULT_MODEL}]",
-            default=model_current or _DEFAULT_MODEL,
+            r"Cursor model \[composer-2.5 is default, optional]",
+            default="",
             show_default=False,
         )
         if model_answer.strip():
             values["CURSOR_MODEL"] = model_answer.strip()
+        elif model_current:
+            values["CURSOR_MODEL"] = model_current
 
         from ..config import MemclawConfig
 
         cfg = MemclawConfig(memory_dir=Path(memory_dir)) if memory_dir else MemclawConfig()
-        if ensure_cursor_hooks(cfg.memory_dir):
-            status = cursor_hooks_status(cfg.memory_dir)
-            logger.info("Cursor tool-restriction hooks: {status}", status=status)
-        else:
+        if not ensure_cursor_hooks(cfg.memory_dir):
             status = cursor_hooks_status(cfg.memory_dir)
             logger.warning(
                 "Cursor tool-restriction hooks are not ready ({status}). "
