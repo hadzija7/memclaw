@@ -208,7 +208,7 @@ def _run_telegram(config: MemclawConfig) -> None:
     async def post_shutdown(application: Application) -> None:
         handlers = application.bot_data.get("handlers")
         if handlers:
-            handlers.close()
+            await handlers.aclose()
             logger.info("Memclaw bot shut down cleanly")
 
     app = (
@@ -308,7 +308,7 @@ def _run_slack(config: MemclawConfig) -> None:
         except KeyboardInterrupt:
             pass
         finally:
-            handlers.close()
+            await handlers.aclose()
             console.print("\nMemclaw Slack bot shut down.")
 
     asyncio.run(_run())
