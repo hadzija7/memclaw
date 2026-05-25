@@ -39,7 +39,7 @@ _LOGO_CLAW = (
 )
 
 
-def _build_logo_banner() -> Text:
+def build_logo_banner() -> Text:
     """Assemble the two-color wordmark as a single Rich Text."""
     mem_lines = _LOGO_MEM.split("\n")
     claw_lines = _LOGO_CLAW.split("\n")
@@ -51,13 +51,28 @@ def _build_logo_banner() -> Text:
             banner.append("\n")
     return banner
 
+
+def print_logo() -> None:
+    """Print the two-color wordmark to the shared console."""
+    console.print()
+    console.print(build_logo_banner(), soft_wrap=True)
+    console.print()
+
+
+# Supported front-end platforms in display order. The first one is also the
+# default when nothing has been configured yet.
+PLATFORMS: list[tuple[str, str]] = [
+    ("telegram", "Telegram"),
+    ("whatsapp", "WhatsApp"),
+    ("slack", "Slack"),
+    ("terminal", "Terminal chat"),
+]
+
 # Generic keys prompted for every install. The agent-backend credential is
 # collected by the chosen backend's `wizard_setup()`, not by this list.
-# `channel` is None for always-asked keys, or a channel name (e.g. "telegram")
-# for keys that are only relevant to that bot command. `required` for a
-# channel-scoped key means "required when invoked via that channel" (e.g.
-# SLACK_BOT_TOKEN is required during `memclaw slack`, but not enforced during
-# `memclaw configure` which shows everything).
+# `platform` is None for always-asked keys, or a platform name for keys that
+# are only relevant when that platform is selected. `required` for a
+# platform-scoped key is enforced only when that platform is the active one.
 KEYS: list[tuple[str, str, bool, str | None]] = [
     ("OPENAI_API_KEY", "OpenAI API key (for embeddings + voice transcription)", True, None),
     ("TELEGRAM_BOT_TOKEN", "Telegram bot token", True, "telegram"),
@@ -67,6 +82,32 @@ KEYS: list[tuple[str, str, bool, str | None]] = [
     ("SLACK_ALLOWED_CHANNELS", "Allowed Slack channel IDs (comma-separated)", False, "slack"),
     ("SLACK_ALLOWED_USERS", "Allowed Slack user IDs (comma-separated)", False, "slack"),
 ]
+
+
+def _select_platform(existing: dict[str, str]) -> str:
+    """Pick the front-end platform Memclaw should launch."""
+    console.print()
+    bullets = "\n\n".join(
+        f"[bold]{i + 1})[/bold] {label}" for i, (_, label) in enumerate(PLATFORMS)
+    )
+    body = (
+        f"{bullets}\n\n"
+        "[dim]See the README for instructions on how to set up Telegram, "
+        "WhatsApp, or Slack credentials.[/dim]"
+    )
+    console.print(
+        Panel(body, title="How do you want to talk to Memclaw?",
+              border_style="bright_cyan")
+    )
+
+    current = existing.get("MEMCLAW_PLATFORM", "")
+    default_idx = next(
+        (str(i + 1) for i, (name, _) in enumerate(PLATFORMS) if name == current),
+        "1",
+    )
+    choices = [str(i + 1) for i in range(len(PLATFORMS))]
+    choice = Prompt.ask("Choose", choices=choices, default=default_idx)
+    return PLATFORMS[int(choice) - 1][0]
 
 
 def _select_backend(existing: dict[str, str]) -> str:
@@ -181,19 +222,15 @@ def needs_setup() -> bool:
     return not ENV_FILE.exists()
 
 
-def run_setup(*, reconfigure: bool = False, channel: str | None = None) -> None:
+def run_setup(*, reconfigure: bool = False) -> None:
     """Run the interactive setup wizard.
 
     Args:
-        reconfigure: If True, show existing values and allow updating all keys.
-        channel: If set (e.g. "telegram"), only prompt for always-asked keys
-                 plus keys scoped to that channel. Ignored when reconfiguring.
+        reconfigure: If True, frame the prompts as "update your config"
+                     instead of "welcome". The set of keys asked is identical
+                     either way -- it depends only on the chosen platform.
     """
     existing = _load_existing()
-
-    console.print()
-    console.print(_build_logo_banner(), soft_wrap=True)
-    console.print()
 
     if reconfigure:
         console.print(
@@ -216,8 +253,9 @@ def run_setup(*, reconfigure: bool = False, channel: str | None = None) -> None:
             )
         )
 
-    # Start from any previously-saved values so channel-scoped keys that we
-    # skip this round are preserved.
+    # Start from any previously-saved values so platform-scoped keys we don't
+    # prompt for this round (because the user picked a different platform) are
+    # preserved and remain available if they switch back later.
     values: dict[str, str] = dict(existing)
 
     # 1) Choose backend, 2) let it collect its own credentials.
@@ -229,40 +267,44 @@ def run_setup(*, reconfigure: bool = False, channel: str | None = None) -> None:
     for key in drop_keys:
         values.pop(key, None)
 
-    # A channel-scoped required key is only enforced when invoked via that
-    # channel; in reconfigure mode nothing is enforced (user is just editing).
-    def _is_required(required: bool, key_channel: str | None) -> bool:
-        if reconfigure or not required:
-            return False
-        return key_channel is None or key_channel == channel
-
-    for env_key, label, required, key_channel in KEYS:
-        # Skip channel-scoped keys that don't match this invocation (unless
-        # the user is explicitly reconfiguring, in which case show all).
-        if not reconfigure and key_channel is not None and key_channel != channel:
-            continue
-
+    def _prompt_key(env_key: str, label: str, required: bool) -> None:
         current = existing.get(env_key, "")
-        masked = _mask(current)
-        is_required = _is_required(required, key_channel)
-
-        if reconfigure and current:
-            prompt_text = f"{label} [{masked}]"
-        elif is_required:
+        if current:
+            prompt_text = f"{label} [{_mask(current)}]"
+        elif required:
             prompt_text = f"{label} (required)"
         else:
             prompt_text = f"{label} (optional)"
-
         answer = _masked_input(prompt_text)
-
         if answer:
             values[env_key] = answer
         elif current:
             values[env_key] = current
 
-    # Validate required keys (always-required + channel-scoped required).
-    for env_key, label, required, key_channel in KEYS:
-        if _is_required(required, key_channel) and not values.get(env_key):
+    # 3) Ask for the always-required keys (currently just OpenAI) before the
+    # platform picker, so the order is: Claude creds → OpenAI key → platform.
+    for env_key, label, required, key_platform in KEYS:
+        if key_platform is None:
+            _prompt_key(env_key, label, required)
+
+    # 4) Choose the front-end platform; this scopes which platform-specific
+    # keys we'll prompt for below.
+    platform = _select_platform(existing)
+    values["MEMCLAW_PLATFORM"] = platform
+
+    # 5) Ask for keys scoped to the chosen platform.
+    for env_key, label, required, key_platform in KEYS:
+        if key_platform == platform:
+            _prompt_key(env_key, label, required)
+
+    # Validate required keys (always-required + platform-scoped required).
+    def _is_required(required: bool, key_platform: str | None) -> bool:
+        if not required:
+            return False
+        return key_platform is None or key_platform == platform
+
+    for env_key, label, required, key_platform in KEYS:
+        if _is_required(required, key_platform) and not values.get(env_key):
             console.print(f"[red]Error:[/red] {label} is required.")
             raise SystemExit(1)
 

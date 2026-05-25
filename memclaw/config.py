@@ -35,6 +35,10 @@ class MemclawConfig:
     # value resolves to the default backend at runtime.
     agent_backend: str = ""
 
+    # Which front-end platform `memclaw` launches by default:
+    # "terminal", "telegram", "slack", or "whatsapp".
+    platform: str = ""
+
     # Conversation continuity
     conversation_history_limit: int = 10
 
@@ -60,6 +64,8 @@ class MemclawConfig:
             self.claude_code_oauth_token = os.environ.get("CLAUDE_CODE_OAUTH_TOKEN", "")
         if not self.agent_backend:
             self.agent_backend = os.environ.get("AGENT_BACKEND", "")
+        if not self.platform:
+            self.platform = os.environ.get("MEMCLAW_PLATFORM", "")
         if not self.telegram_bot_token:
             self.telegram_bot_token = os.environ.get("TELEGRAM_BOT_TOKEN", "")
         if not self.allowed_user_ids:
