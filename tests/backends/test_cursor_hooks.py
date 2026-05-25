@@ -20,6 +20,7 @@ from memclaw.backends.tool_policy import HOOKS_VERSION, MEMCLAW_TOOL_NAMES
 from memclaw.defaults.cursor_hooks.allow_memclaw_tools import (
     HOOKS_VERSION as INSTALLED_HOOKS_VERSION,
     MEMCLAW_MCP_TOOL_NAMES,
+    _resolve_memory_dir,
     is_allowed_file_read,
     is_allowed_mcp_execution,
     is_allowed_shell_execution,
@@ -229,6 +230,37 @@ class TestHookPolicy:
         })["permission"] == "allow"
         assert run({"hook_event_name": "beforeReadFile", "file_path": "/tmp/x"})["permission"] == "deny"
         assert run({"hook_event_name": "beforeShellExecution", "command": "ls"})["permission"] == "deny"
+
+    def test_audit_deny_writes_to_hook_install_memory_dir(self, tmp_path: Path, monkeypatch):
+        ensure_cursor_hooks(tmp_path)
+        script = cursor_hook_script_path(tmp_path)
+        monkeypatch.delenv("MEMCLAW_MEMORY_DIR", raising=False)
+
+        proc = subprocess.run(
+            [sys.executable, str(script)],
+            input=json.dumps(
+                {
+                    "tool_name": "Read",
+                    "tool_input": {"path": "/etc/passwd"},
+                    "hook_event_name": "preToolUse",
+                }
+            ),
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        assert json.loads(proc.stdout)["permission"] == "deny"
+
+        log_path = tmp_path / "hook-deny.jsonl"
+        assert log_path.is_file()
+        entry = json.loads(log_path.read_text(encoding="utf-8").strip())
+        assert entry["payload"]["tool_name"] == "Read"
+
+    def test_resolve_memory_dir_prefers_env_override(self, tmp_path: Path, monkeypatch):
+        ensure_cursor_hooks(tmp_path)
+        override = tmp_path / "other-vault"
+        monkeypatch.setenv("MEMCLAW_MEMORY_DIR", str(override))
+        assert _resolve_memory_dir() == override
 
 
 class TestHookInstallation:

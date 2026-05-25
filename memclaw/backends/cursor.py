@@ -105,6 +105,7 @@ class CursorAgentBackend:
         self._api_key = _cursor_api_key(config)
         self._model = _cursor_model(config)
         self._cwd = str(config.memory_dir)
+        os.environ["MEMCLAW_MEMORY_DIR"] = self._cwd
         self.bills_per_token = True
         self._mcp_server = HttpMcpServer()
 

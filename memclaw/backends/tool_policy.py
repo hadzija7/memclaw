@@ -5,7 +5,7 @@ from __future__ import annotations
 from ..tools import TOOL_DEFINITIONS
 from .mcp_tools import MCP_SERVER_NAME
 
-HOOKS_VERSION = 7
+HOOKS_VERSION = 8
 
 MEMCLAW_TOOL_NAMES = frozenset(defn["name"] for defn in TOOL_DEFINITIONS)
 

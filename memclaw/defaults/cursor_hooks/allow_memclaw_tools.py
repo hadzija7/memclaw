@@ -3,7 +3,7 @@
 
 Installed to ~/.memclaw/.cursor/hooks/ by the Cursor backend.
 Handles preToolUse, beforeMCPExecution, beforeReadFile, and beforeShellExecution.
-memclaw-hooks-version: 7
+memclaw-hooks-version: 8
 
 Tool allowlists are loaded from hook_policy.json (written on install from
 memclaw.backends.tool_policy).
@@ -216,12 +216,18 @@ def _handle_event(payload: dict) -> bool:
     return False
 
 
+def _resolve_memory_dir() -> Path:
+    """Return the active Memclaw memory directory for audit logs."""
+    configured = os.environ.get("MEMCLAW_MEMORY_DIR", "").strip()
+    if configured:
+        return Path(configured)
+    # Installed at <memory_dir>/.cursor/hooks/allow_memclaw_tools.py
+    return Path(__file__).resolve().parent.parent.parent
+
+
 def _audit_deny(payload: dict) -> None:
     """Append denied hook payloads for troubleshooting (best-effort)."""
-    memory_dir = os.environ.get("MEMCLAW_MEMORY_DIR", "").strip()
-    if not memory_dir:
-        memory_dir = str(Path.home() / ".memclaw")
-    log_path = Path(memory_dir) / "hook-deny.jsonl"
+    log_path = _resolve_memory_dir() / "hook-deny.jsonl"
     try:
         log_path.parent.mkdir(parents=True, exist_ok=True)
         entry = {

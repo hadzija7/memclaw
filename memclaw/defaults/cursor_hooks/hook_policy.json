@@ -1,5 +1,5 @@
 {
-  "hooks_version": 7,
+  "hooks_version": 8,
   "allowed_mcp_provider": "memclaw",
   "memclaw_tool_names": [
     "file_read",

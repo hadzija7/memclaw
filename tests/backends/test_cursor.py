@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, PropertyMock, patch
@@ -86,6 +87,7 @@ class TestCursorAgentBackendConfig:
         assert backend._api_key == "crsr_test_key"
         assert backend._model == "composer-2.5"
         assert backend._cwd == str(cfg.memory_dir)
+        assert os.environ["MEMCLAW_MEMORY_DIR"] == str(cfg.memory_dir)
         assert backend.bills_per_token is True
         assert cursor_hooks_installed(cfg.memory_dir) is False
 
