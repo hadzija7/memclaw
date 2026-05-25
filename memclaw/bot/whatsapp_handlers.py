@@ -24,6 +24,7 @@ from neonize.utils.jid import build_jid
 from ..agent import MemclawAgent
 from ..config import MemclawConfig
 from ..reminders import ReminderScheduler
+from . import mask_user_id
 from .link_processor import LinkProcessor
 
 
@@ -62,7 +63,7 @@ class WhatsAppBot:
 
         @self.client.event(PairStatusEv)
         async def _on_pair(_cli: NewAClient, ev: PairStatusEv):
-            logger.info("WhatsApp paired as +{jid}", jid=ev.ID.User)
+            logger.info("WhatsApp paired as +{jid}", jid=mask_user_id(ev.ID.User))
 
         @self.client.event(MessageEv)
         async def _on_message(cli: NewAClient, ev: MessageEv):
@@ -123,7 +124,7 @@ class WhatsAppBot:
 
     async def _handle_text(self, cli: NewAClient, ev: MessageEv, text: str):
         sender = ev.Info.MessageSource.Sender.User
-        logger.info("WhatsApp text from {s}: {t}", s=sender, t=text[:100])
+        logger.info("WhatsApp text from {s}: {t}", s=mask_user_id(sender), t=text[:100])
 
         prompt_parts = [text]
         links = await self.link_processor.process_links(text)
@@ -146,7 +147,7 @@ class WhatsAppBot:
         img_msg = ev.Message.imageMessage
         caption = img_msg.caption or ""
         sender = ev.Info.MessageSource.Sender.User
-        logger.info("WhatsApp image from {s}, caption={c!r}", s=sender, c=caption)
+        logger.info("WhatsApp image from {s}, caption={c!r}", s=mask_user_id(sender), c=caption)
 
         try:
             image_bytes = await cli.download_any(ev.Message)
@@ -194,7 +195,7 @@ class WhatsAppBot:
     async def _handle_audio(self, cli: NewAClient, ev: MessageEv):
         audio_msg = ev.Message.audioMessage
         sender = ev.Info.MessageSource.Sender.User
-        logger.info("WhatsApp voice/audio from {s}", s=sender)
+        logger.info("WhatsApp voice/audio from {s}", s=mask_user_id(sender))
 
         try:
             audio_bytes = await cli.download_any(ev.Message)
@@ -206,12 +207,22 @@ class WhatsAppBot:
         mime_type = audio_msg.mimetype or "audio/ogg"
         ext = _mime_to_ext(mime_type) or ".ogg"
 
-        transcription = await self.openai_client.audio.transcriptions.create(
-            model="whisper-1",
-            file=(f"voice{ext}", audio_bytes, mime_type),
-        )
+        try:
+            transcription = await self.openai_client.audio.transcriptions.create(
+                model="whisper-1",
+                file=(f"voice{ext}", audio_bytes, mime_type),
+            )
+        except Exception as exc:
+            logger.exception("Whisper transcription failed: {exc}", exc=exc)
+            await cli.reply_message(
+                "I couldn't transcribe that voice message. "
+                "If you set up Memclaw recently, run `memclaw doctor` to check "
+                "your OpenAI key has access to the whisper-1 model.",
+                ev,
+            )
+            return
         text = transcription.text
-        logger.debug("Transcribed WhatsApp voice: {t}", t=text[:100])
+        logger.info("Transcribed WhatsApp voice: {t}", t=text)
 
         link_info = ""
         links = await self.link_processor.process_links(text)
